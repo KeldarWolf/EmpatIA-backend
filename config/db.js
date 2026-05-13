@@ -12,8 +12,14 @@ const pool = new Pool({
   },
 });
 
-pool.connect()
-  .then(() => console.log("✅ DB conectada"))
-  .catch((err) => console.error("❌ Error DB:", err));
+// 🔥 TEST REAL DE CONEXIÓN
+pool.query("SELECT NOW()")
+  .then((res) => {
+    console.log("✅ DB CONECTADA:", res.rows[0]);
+  })
+  .catch((err) => {
+    console.error("❌ ERROR CONECTANDO DB:");
+    console.error(err.message);
+  });
 
 export default pool;
