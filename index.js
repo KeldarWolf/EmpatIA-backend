@@ -7,10 +7,7 @@ dotenv.config();
 
 const app = express();
 
-// 🔓 CORS
 app.use(cors({ origin: "*" }));
-
-// 📦 JSON
 app.use(express.json());
 
 // 🔎 LOG GLOBAL
@@ -21,100 +18,43 @@ app.use((req, res, next) => {
 
 // 🏠 HOME
 app.get("/", (req, res) => {
-  res.send(`
-    <h2>EmpatIA Backend activo 🤖</h2>
-    <p>Endpoints:</p>
-    <ul>
-      <li>POST /chat</li>
-      <li>POST /api/auth/register</li>
-      <li>GET /health</li>
-      <li>GET /test-db</li>
-    </ul>
-  `);
+  res.send("EmpatIA Backend activo 🚀");
 });
 
-// 🧪 HEALTH
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
-});
-
-// 🧪 TEST DB (CLAVE PARA VER SI CONECTA)
+// 🧪 TEST DB
 app.get("/test-db", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
-    res.json({
-      ok: true,
-      db: result.rows[0],
-    });
+    res.json({ ok: true, db: result.rows[0] });
   } catch (error) {
-    console.error("❌ DB ERROR:", error.message);
-    res.status(500).json({
-      ok: false,
-      error: error.message,
-    });
+    console.error("❌ DB ERROR:", error);
+    res.status(500).json({ ok: false, error: error.message });
   }
 });
 
-// 🤖 CHAT IA
-app.post("/chat", async (req, res) => {
-  const { message } = req.body;
-
-  try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `Eres EmpatIA, asistente emocional. Responde corto.\nUsuario: ${message}`,
-                },
-              ],
-            },
-          ],
-        }),
-      }
-    );
-
-    const data = await r.json();
-
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      data?.error?.message ||
-      "Te leo 🤍";
-
-    res.json({ reply });
-
-  } catch (error) {
-    console.error("CHAT ERROR:", error);
-    res.status(500).json({ reply: "Error en IA 😢" });
-  }
-});
-
-// 🧑‍💻 REGISTER REAL CON BD
+// 🧑‍💻 REGISTER REAL
 app.post("/api/auth/register", async (req, res) => {
-
   console.log("📩 REGISTER:", req.body);
 
   try {
     const { nombre, email, password } = req.body;
 
+    // 🔍 validación básica
     if (!nombre || !email || !password) {
       return res.status(400).json({
         error: "Faltan datos"
       });
     }
 
-    // 🔍 ver si existe
-    const check = await pool.query(
+    console.log("➡️ Verificando usuario...");
+
+    // 🔍 verificar si existe
+    const userExists = await pool.query(
       "SELECT * FROM usuario WHERE email = $1",
       [email]
     );
 
-    if (check.rows.length > 0) {
+    if (userExists.rows.length > 0) {
       return res.status(400).json({
         error: "Usuario ya existe"
       });
@@ -122,6 +62,7 @@ app.post("/api/auth/register", async (req, res) => {
 
     console.log("💾 Insertando usuario...");
 
+    // 💾 INSERT
     const result = await pool.query(
       `INSERT INTO usuario (nombre, email, password_hash)
        VALUES ($1, $2, $3)
@@ -131,17 +72,19 @@ app.post("/api/auth/register", async (req, res) => {
 
     console.log("✅ Usuario creado:", result.rows[0]);
 
-    res.json({
+    return res.json({
       ok: true,
       user: result.rows[0]
     });
 
   } catch (error) {
-    console.error("❌ REGISTER ERROR:");
-    console.error(error.message);
+    console.error("❌ ERROR REAL:");
+    console.error(error); // 🔥 esto es lo importante
 
-    res.status(500).json({
-      error: error.message
+    return res.status(500).json({
+      error: error.message,
+      detail: error.detail,
+      code: error.code
     });
   }
 });
