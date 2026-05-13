@@ -11,21 +11,26 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// routes
-app.use("/api/auth", authRoutes);
+// 👇 LOG GLOBAL (ver todo lo que entra)
+app.use((req, res, next) => {
+  console.log(`➡️ ${req.method} ${req.url}`);
+  next();
+});
 
-// test route
 app.get("/", (req, res) => {
+  console.log("🏠 Home hit");
   res.send("EmpatIA funcionando 🚀");
 });
 
-// health check
-app.get("/test", (req, res) => {
+app.get("/debug", (req, res) => {
+  console.log("🧪 Debug endpoint hit");
   res.json({ ok: true });
 });
+
+app.use("/api/auth", authRoutes);
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor puerto ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
