@@ -5,44 +5,43 @@ import bcrypt from "bcrypt";
 const router = express.Router();
 
 router.post("/register", async (req, res) => {
-  console.log("📩 REGISTER BODY:", req.body);
 
   try {
+
+    console.log("📩 BODY:", req.body);
+
     const { nombre, edad, email, password } = req.body;
 
     if (!nombre || !email || !password) {
-      return res.status(400).json({
-        error: "Faltan datos",
-      });
+      return res.status(400).json({ error: "Faltan datos" });
     }
 
     console.log("🔐 Hasheando password...");
-    const passwordHash = await bcrypt.hash(password, 10);
 
-    console.log("💾 Insertando en BD...");
+    const hash = await bcrypt.hash(password, 10);
+
+    console.log("💾 INSERT BD...");
 
     const result = await pool.query(
-      `
-      INSERT INTO "Usuario"
-      (nombre, edad, email, password_hash)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id_usuario, nombre, email, fecha_registro
-      `,
-      [nombre, edad || null, email, passwordHash]
+      `INSERT INTO "Usuario" (nombre, edad, email, password_hash)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id_usuario, nombre, email`,
+      [nombre, edad || null, email, hash]
     );
 
-    console.log("✅ Usuario guardado:", result.rows[0]);
+    console.log("✅ GUARDADO:", result.rows[0]);
 
     return res.json({
       ok: true,
-      user: result.rows[0],
+      user: result.rows[0]
     });
 
   } catch (error) {
-    console.error("🔥 ERROR REGISTER:", error);
+
+    console.error("❌ ERROR DB COMPLETO:", error);
 
     return res.status(500).json({
-      error: error.message,
+      error: error.message
     });
   }
 });
