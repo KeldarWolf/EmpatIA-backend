@@ -15,6 +15,7 @@ router.post("/register", async (req, res) => {
 
     const { nombre, edad, email, password } = req.body;
 
+    // validar datos
     if (!nombre || !email || !password) {
 
       return res.status(400).json({
@@ -22,11 +23,11 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // verificar si existe usuario
+    // verificar usuario existente
     const existingUser = await pool.query(
       `
       SELECT *
-      FROM "Usuario"
+      FROM "usuario"
       WHERE email = $1
       `,
       [email]
@@ -41,22 +42,30 @@ router.post("/register", async (req, res) => {
 
     console.log("🔐 Hasheando password...");
 
+    // hash password
     const hash = await bcrypt.hash(password, 10);
 
     console.log("💾 Guardando usuario...");
 
+    // insertar usuario
     const result = await pool.query(
       `
-      INSERT INTO "Usuario"
+      INSERT INTO "usuario"
       (nombre, edad, email, password_hash)
       VALUES ($1, $2, $3, $4)
+
       RETURNING
       id_usuario,
       nombre,
       email,
       role
       `,
-      [nombre, edad || null, email, hash]
+      [
+        nombre,
+        edad || null,
+        email,
+        hash
+      ]
     );
 
     console.log("✅ USUARIO CREADO");
@@ -87,6 +96,7 @@ router.post("/login", async (req, res) => {
 
     const { email, password } = req.body;
 
+    // validar datos
     if (!email || !password) {
 
       return res.status(400).json({
@@ -96,15 +106,17 @@ router.post("/login", async (req, res) => {
 
     console.log("🔍 Buscando usuario...");
 
+    // buscar usuario
     const result = await pool.query(
       `
       SELECT *
-      FROM "Usuario"
+      FROM "usuario"
       WHERE email = $1
       `,
       [email]
     );
 
+    // no existe
     if (result.rows.length === 0) {
 
       return res.status(401).json({
@@ -116,11 +128,13 @@ router.post("/login", async (req, res) => {
 
     console.log("🔐 Comparando password...");
 
+    // comparar bcrypt
     const validPassword = await bcrypt.compare(
       password,
       user.password_hash
     );
 
+    // password incorrecta
     if (!validPassword) {
 
       return res.status(401).json({
@@ -130,6 +144,7 @@ router.post("/login", async (req, res) => {
 
     console.log("✅ LOGIN OK");
 
+    // devolver usuario limpio
     return res.json({
       ok: true,
       user: {
