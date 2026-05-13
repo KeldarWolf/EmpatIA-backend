@@ -5,7 +5,9 @@ import bcrypt from "bcrypt";
 const router = express.Router();
 
 
-// ================= REGISTER =================
+// ======================================================
+// REGISTER
+// ======================================================
 
 router.post("/register", async (req, res) => {
 
@@ -13,7 +15,12 @@ router.post("/register", async (req, res) => {
 
     console.log("📩 REGISTER:", req.body);
 
-    const { nombre, edad, email, password } = req.body;
+    const {
+      nombre,
+      edad,
+      email,
+      password
+    } = req.body;
 
     // validar datos
     if (!nombre || !email || !password) {
@@ -27,7 +34,7 @@ router.post("/register", async (req, res) => {
     const existingUser = await pool.query(
       `
       SELECT *
-      FROM "usuario"
+      FROM usuario
       WHERE email = $1
       `,
       [email]
@@ -50,8 +57,14 @@ router.post("/register", async (req, res) => {
     // insertar usuario
     const result = await pool.query(
       `
-      INSERT INTO "usuario"
-      (nombre, edad, email, password_hash)
+      INSERT INTO usuario
+      (
+        nombre,
+        edad,
+        email,
+        password_hash
+      )
+
       VALUES ($1, $2, $3, $4)
 
       RETURNING
@@ -86,7 +99,9 @@ router.post("/register", async (req, res) => {
 });
 
 
-// ================= LOGIN =================
+// ======================================================
+// LOGIN
+// ======================================================
 
 router.post("/login", async (req, res) => {
 
@@ -94,7 +109,10 @@ router.post("/login", async (req, res) => {
 
     console.log("📩 LOGIN:", req.body);
 
-    const { email, password } = req.body;
+    const {
+      email,
+      password
+    } = req.body;
 
     // validar datos
     if (!email || !password) {
@@ -110,13 +128,13 @@ router.post("/login", async (req, res) => {
     const result = await pool.query(
       `
       SELECT *
-      FROM "usuario"
+      FROM usuario
       WHERE email = $1
       `,
       [email]
     );
 
-    // no existe
+    // usuario no existe
     if (result.rows.length === 0) {
 
       return res.status(401).json({
@@ -128,7 +146,7 @@ router.post("/login", async (req, res) => {
 
     console.log("🔐 Comparando password...");
 
-    // comparar bcrypt
+    // comparar password
     const validPassword = await bcrypt.compare(
       password,
       user.password_hash
@@ -142,11 +160,12 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    console.log("✅ LOGIN OK");
+    console.log("✅ LOGIN EXITOSO");
 
     // devolver usuario limpio
     return res.json({
       ok: true,
+
       user: {
         id: user.id_usuario,
         nombre: user.nombre,
