@@ -11,12 +11,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// routes
 app.use("/api/auth", authRoutes);
 
+// test route
 app.get("/", (req, res) => {
-    res.send("EmpatIA funcionando");
+  res.send("EmpatIA funcionando 🚀");
 });
 
-app.listen(process.env.PORT || 3000, () => {
-    console.log("Servidor puerto 3000");
+// health check
+app.get("/test", (req, res) => {
+  res.json({ ok: true });
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor puerto ${PORT}`);
 });
