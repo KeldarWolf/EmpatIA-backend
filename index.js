@@ -16,8 +16,8 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
-// ✅ modelo Gemini
-const MODEL = "gemini-1.5-flash";
+// ✅ modelo Gemini NUEVO
+const MODEL = "gemini-2.0-flash";
 
 // ✅ inicio
 app.get("/", (req, res) => {
@@ -28,7 +28,7 @@ app.get("/", (req, res) => {
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  // validar
+  // validar mensaje
   if (!message || !message.trim()) {
     return res.status(400).json({
       reply: "Mensaje vacío",
@@ -36,9 +36,9 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
-    // 🔥 request Gemini
+    // 🔥 petición Gemini
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
 
@@ -58,6 +58,7 @@ Reglas:
 - Responde corto
 - Máximo 2 frases
 - Natural y humano
+- Cercano y calmado
 - No hagas respuestas largas
 - Si el usuario no sabe qué hacer,
   recomienda SOLO UNA actividad:
@@ -73,7 +74,7 @@ Usuario: ${message}
       }
     );
 
-    // ❌ error Gemini HTTP
+    // ❌ error HTTP Gemini
     if (!response.ok) {
       const errText = await response.text();
 
@@ -85,7 +86,7 @@ Usuario: ${message}
       });
     }
 
-    // ✅ json Gemini
+    // ✅ respuesta Gemini
     const data = await response.json();
 
     console.log(
@@ -93,14 +94,14 @@ Usuario: ${message}
       JSON.stringify(data, null, 2)
     );
 
-    // ❌ error Gemini interno
+    // ❌ error interno Gemini
     if (data.error) {
       return res.status(500).json({
         reply: data.error.message,
       });
     }
 
-    // ✅ respuesta IA
+    // ✅ obtener texto IA
     const reply =
       data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
@@ -111,8 +112,10 @@ Usuario: ${message}
       });
     }
 
-    // ✅ enviar respuesta
-    res.json({ reply });
+    // ✅ respuesta final
+    res.json({
+      reply,
+    });
 
   } catch (error) {
     console.error("SERVER ERROR:");
