@@ -1,9 +1,25 @@
-const express = require("express");
+import express from "express";
 
 const router = express.Router();
 
-const chatController = require("../controllers/chatController");
+router.post("/", async (req, res) => {
+  try {
+    console.log("🤖 CHAT:", req.body);
 
-router.post("/chat", chatController.enviarMensaje);
+    const { message } = req.body;
 
-module.exports = router;
+    if (!message) {
+      return res.status(400).json({ error: "Falta message" });
+    }
+
+    const reply = `🤍 Entiendo lo que dices: "${message}"`;
+
+    return res.json({ reply });
+
+  } catch (error) {
+    console.error("CHAT ERROR:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+export default router;
