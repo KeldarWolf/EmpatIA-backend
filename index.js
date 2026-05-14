@@ -31,7 +31,7 @@ app.post("/chat", async (req, res) => {
   // validar mensaje
   if (!message || !message.trim()) {
     return res.status(400).json({
-      reply: "Mensaje vacío",
+      reply: "¿Cómo te sientes hoy? 🤍",
     });
   }
 
@@ -60,9 +60,9 @@ Reglas:
 - Natural y humano
 - Cercano y calmado
 - No hagas respuestas largas
-- Si el usuario no sabe qué hacer,
-  recomienda SOLO UNA actividad:
-  caminar, respirar, escuchar música o escribir
+- Primero acompaña emocionalmente
+- Luego puedes sugerir UNA actividad si tiene sentido
+- Nunca respondas como robot
 
 Usuario: ${message}
                   `,
@@ -89,7 +89,7 @@ Usuario: ${message}
       ) {
         return res.status(429).json({
           reply:
-            "⚠️ Falta token/cuota de IA, por lo que no puedo conversar en estos momentos.",
+            "🤍 Ahora mismo no puedo conversar porque la IA no tiene tokens disponibles. Intenta nuevamente en un momento.",
         });
       }
 
