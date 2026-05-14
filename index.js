@@ -1,33 +1,3 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-
-import authRoutes from "./routers/authRoutes.js";
-import usersRoutes from "./routers/usersRoutes.js";
-
-dotenv.config();
-
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
-// LOG requests
-app.use((req, res, next) => {
-  console.log("➡️", req.method, req.url);
-  next();
-});
-
-// ROUTES
-app.use("/api/auth", authRoutes);
-app.use("/api/users", usersRoutes);
-
-// HOME
-app.get("/", (req, res) => {
-  res.send("EmpatIA Backend activo 🚀");
-});
-
-// CHAT SIMPLE (IA en backend o proxy)
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
@@ -42,11 +12,7 @@ app.post("/chat", async (req, res) => {
         body: JSON.stringify({
           contents: [
             {
-              parts: [
-                {
-                  text: message,
-                },
-              ],
+              parts: [{ text: message }],
             },
           ],
         }),
@@ -55,20 +21,24 @@ app.post("/chat", async (req, res) => {
 
     const data = await r.json();
 
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Te escucho 🤍";
+    console.log("🔥 GEMINI RAW:", JSON.stringify(data, null, 2));
+
+    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    // ❌ SIN FALLBACK INVISIBLE
+    if (!reply) {
+      return res.status(500).json({
+        reply: "Error: Gemini no respondió",
+        debug: data,
+      });
+    }
 
     res.json({ reply });
+
   } catch (error) {
     console.error("CHAT ERROR:", error);
-    res.status(500).json({ reply: "Error IA" });
+    res.status(500).json({
+      reply: "Error conexión con IA",
+    });
   }
-});
-
-// PORT
-const PORT = process.env.PORT || 3001;
-
-app.listen(PORT, () => {
-  console.log("🚀 Backend en puerto", PORT);
 });
