@@ -18,6 +18,7 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Usuario no encontrado" });
     }
 
+    
     const user = result.rows[0];
 
     if (password !== user.password_hash) {
