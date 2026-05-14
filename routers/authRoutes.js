@@ -1,95 +1,133 @@
-import express from "express";
-import pool from "../config/db.js";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { styles } from "./Login.styles";
+import LoginMatrix from "./LoginMatrix";
 
-const router = express.Router();
+export default function Login() {
 
-/* =========================
-   REGISTER
-========================= */
-router.post("/register", async (req, res) => {
-  try {
-    console.log("🔥 REGISTER:", req.body);
+  const API = "https://empatia-backend.onrender.com/api/users";
+  const navigate = useNavigate();
 
-    const { nombre, edad, email, password } = req.body;
+  const [form, setForm] = useState({
+    nombre: "",
+    password: ""
+  });
 
-    if (!nombre || !password) {
-      return res.status(400).json({ error: "Faltan datos" });
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!form.nombre || !form.password) {
+      alert("Completa usuario y contraseña");
+      return;
     }
 
-    const exist = await pool.query(
-      "SELECT id_usuario FROM usuario WHERE nombre = $1",
-      [nombre]
-    );
+    setLoading(true);
 
-    if (exist.rows.length > 0) {
-      return res.status(400).json({ error: "Usuario ya existe" });
-    }
+    try {
+      const response = await fetch(
+        "https://empatia-backend.onrender.com/api/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            nombre: form.nombre,
+            password: form.password
+          })
+        }
+      );
 
-    const result = await pool.query(
-      `
-      INSERT INTO usuario (nombre, edad, email, password_hash, role)
-      VALUES ($1, $2, $3, $4, 'user')
-      RETURNING id_usuario, nombre, role
-      `,
-      [nombre, edad || null, email || null, password]
-    );
+      const data = await response.json();
 
-    return res.json({
-      ok: true,
-      user: {
-        id: result.rows[0].id_usuario,
-        nombre: result.rows[0].nombre,
-        role: result.rows[0].role?.trim().toLowerCase()
+      if (!response.ok) {
+        alert(data.error || "Usuario o contraseña incorrectos");
+        return;
       }
-    });
 
-  } catch (error) {
-    console.error("❌ REGISTER ERROR:", error);
-    return res.status(500).json({ error: error.message });
-  }
-});
+      // 💾 guardar sesión
+      localStorage.setItem(
+        "usuario",
+        JSON.stringify(data.user)
+      );
 
-/* =========================
-   LOGIN
-========================= */
-router.post("/login", async (req, res) => {
-  try {
-    console.log("🔥 LOGIN:", req.body);
+      alert(`Bienvenido ${data.user.nombre}`);
 
-    const { nombre, password } = req.body;
-
-    if (!nombre || !password) {
-      return res.status(400).json({ error: "Faltan datos" });
-    }
-
-    const result = await pool.query(
-      "SELECT * FROM usuario WHERE nombre = $1",
-      [nombre]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: "Usuario no existe" });
-    }
-
-    const user = result.rows[0];
-
-    if (password !== user.password_hash) {
-      return res.status(401).json({ error: "Contraseña incorrecta" });
-    }
-
-    return res.json({
-      ok: true,
-      user: {
-        id: user.id_usuario,
-        nombre: user.nombre,
-        role: user.role?.trim().toLowerCase()
+      // 🚪 redirección por rol
+      if (data.user.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/user");
       }
-    });
 
-  } catch (error) {
-    console.error("❌ LOGIN ERROR:", error);
-    return res.status(500).json({ error: error.message });
-  }
-});
+    } catch (error) {
+      console.error("❌ ERROR LOGIN:", error);
+      alert("Error conectando con el servidor");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-export default router;
+  return (
+    <div style={styles.container}>
+      <LoginMatrix />
+
+      <div style={styles.centerBlock}>
+        <div style={styles.card}>
+          <h1 style={styles.title}>EmpatIA</h1>
+          <p style={styles.subtitle}>
+            IA emocional en tiempo real
+          </p>
+
+          <div style={styles.formBox}>
+            <input
+              placeholder="Nombre de usuario"
+              value={form.nombre}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  nombre: e.target.value
+                })
+              }
+              style={styles.input}
+            />
+
+            <input
+              type="password"
+              placeholder="Contraseña"
+              value={form.password}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  password: e.target.value
+                })
+              }
+              style={styles.input}
+            />
+
+            <button
+              style={styles.primaryBtn}
+              onClick={handleLogin}
+              disabled={loading}
+            >
+              {loading ? "Entrando..." : "Iniciar sesión"}
+            </button>
+
+            <button
+              style={styles.secondaryBtn}
+              onClick={() => navigate("/register")}
+            >
+              Registrarse
+            </button>
+
+            <div style={styles.divider}>o</div>
+
+            <button style={styles.googleBtn}>
+              🔵 Iniciar con Google
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
