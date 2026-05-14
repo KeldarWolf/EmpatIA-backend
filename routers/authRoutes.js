@@ -23,23 +23,18 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // verificar si existe usuario
-    const existingUser = await pool.query(
-      `SELECT * FROM usuario WHERE email = $1`,
+    const userExist = await pool.query(
+      `SELECT id_usuario FROM usuario WHERE email = $1`,
       [email]
     );
 
-    if (existingUser.rows.length > 0) {
+    if (userExist.rows.length > 0) {
       return res.status(400).json({
-        error: "El usuario ya existe"
+        error: "Usuario ya existe"
       });
     }
 
-    console.log("🔐 Hash password...");
-
     const hash = await bcrypt.hash(password, 10);
-
-    console.log("💾 Insertando usuario...");
 
     const result = await pool.query(
       `
@@ -99,8 +94,6 @@ router.post("/login", async (req, res) => {
 
     const user = result.rows[0];
 
-    console.log("👤 USER FOUND:", user.email);
-
     const validPassword = await bcrypt.compare(
       password,
       user.password_hash
@@ -111,8 +104,6 @@ router.post("/login", async (req, res) => {
         error: "Contraseña incorrecta"
       });
     }
-
-    console.log("✅ LOGIN OK");
 
     return res.json({
       ok: true,
