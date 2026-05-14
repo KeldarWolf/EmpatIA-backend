@@ -16,7 +16,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
-// ✅ modelo Gemini NUEVO
+// ✅ modelo Gemini
 const MODEL = "gemini-2.0-flash";
 
 // ✅ inicio
@@ -74,15 +74,51 @@ Usuario: ${message}
       }
     );
 
-    // ❌ error HTTP Gemini
+    // ❌ errores Gemini
     if (!response.ok) {
       const errText = await response.text();
 
       console.error("GEMINI HTTP ERROR:");
       console.error(errText);
 
+      // 🔴 sin cuota/tokens
+      if (
+        response.status === 429 ||
+        errText.includes("quota") ||
+        errText.includes("RESOURCE_EXHAUSTED")
+      ) {
+        return res.status(429).json({
+          reply:
+            "⚠️ Falta token/cuota de IA, por lo que no puedo conversar en estos momentos.",
+        });
+      }
+
+      // 🔴 modelo no encontrado
+      if (
+        response.status === 404 ||
+        errText.includes("not found")
+      ) {
+        return res.status(404).json({
+          reply:
+            "⚠️ El modelo de IA no está disponible en este momento.",
+        });
+      }
+
+      // 🔴 api key inválida
+      if (
+        response.status === 401 ||
+        errText.includes("API key")
+      ) {
+        return res.status(401).json({
+          reply:
+            "⚠️ Problema con la configuración de la IA.",
+        });
+      }
+
+      // 🔴 error genérico
       return res.status(response.status).json({
-        reply: errText,
+        reply:
+          "😢 No pude responder en este momento.",
       });
     }
 
@@ -97,7 +133,8 @@ Usuario: ${message}
     // ❌ error interno Gemini
     if (data.error) {
       return res.status(500).json({
-        reply: data.error.message,
+        reply:
+          "😢 Ocurrió un error interno con la IA.",
       });
     }
 
@@ -108,7 +145,8 @@ Usuario: ${message}
     // ❌ sin texto
     if (!reply) {
       return res.status(500).json({
-        reply: "Gemini no devolvió respuesta",
+        reply:
+          "😢 La IA no devolvió respuesta.",
       });
     }
 
@@ -122,7 +160,8 @@ Usuario: ${message}
     console.error(error);
 
     res.status(500).json({
-      reply: error.message || "Error servidor",
+      reply:
+        "😢 Error del servidor al conectar con la IA.",
     });
   }
 });
