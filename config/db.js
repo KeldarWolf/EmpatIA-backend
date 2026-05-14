@@ -3,9 +3,10 @@ import pool from "../config/db.js";
 
 const router = express.Router();
 
-/* =========================
-   REGISTER (SIN BCRYPT)
-========================= */
+
+// =========================
+// REGISTER SIMPLE
+// =========================
 router.post("/register", async (req, res) => {
   try {
     const { nombre, edad, email, password } = req.body;
@@ -16,9 +17,8 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ error: "Faltan datos" });
     }
 
-    // verificar usuario existente
     const existing = await pool.query(
-      `SELECT * FROM usuario WHERE email = $1`,
+      "SELECT id_usuario FROM usuario WHERE email = $1",
       [email]
     );
 
@@ -26,7 +26,6 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ error: "Usuario ya existe" });
     }
 
-    // insertar usuario (password plano)
     const result = await pool.query(
       `
       INSERT INTO usuario (nombre, edad, email, password_hash, role)
@@ -48,9 +47,9 @@ router.post("/register", async (req, res) => {
 });
 
 
-/* =========================
-   LOGIN (SIN BCRYPT)
-========================= */
+// =========================
+// LOGIN SIMPLE
+// =========================
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -62,7 +61,7 @@ router.post("/login", async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT * FROM usuario WHERE email = $1`,
+      "SELECT * FROM usuario WHERE email = $1",
       [email]
     );
 
@@ -72,7 +71,7 @@ router.post("/login", async (req, res) => {
 
     const user = result.rows[0];
 
-    // comparación simple (SIN SEGURIDAD)
+    // comparación directa
     if (password !== user.password_hash) {
       return res.status(401).json({ error: "Contraseña incorrecta" });
     }
