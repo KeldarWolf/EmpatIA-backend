@@ -1,24 +1,35 @@
 import express from "express";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const router = express.Router();
 
-router.post("/", async (req, res) => {
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+router.post("/chat", async (req, res) => {
   try {
-    console.log("🤖 CHAT:", req.body);
+    const { message, user } = req.body;
 
-    const { message } = req.body;
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+    });
 
-    if (!message) {
-      return res.status(400).json({ error: "Falta message" });
-    }
+    const prompt = `
+Eres una IA de apoyo emocional.
+Habla natural, sin frases repetidas.
 
-    const reply = `🤍 Entiendo lo que dices: "${message}"`;
+Usuario: ${user?.nombre || "desconocido"}
+Mensaje: ${message}
+`;
 
-    return res.json({ reply });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    res.json({ reply: text });
 
   } catch (error) {
-    console.error("CHAT ERROR:", error);
-    return res.status(500).json({ error: error.message });
+    console.error(error);
+    res.status(500).json({ reply: "Error IA" });
   }
 });
 
