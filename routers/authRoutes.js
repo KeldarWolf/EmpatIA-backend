@@ -1,133 +1,90 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { styles } from "./Login.styles";
-import LoginMatrix from "./LoginMatrix";
+import express from "express";
+import pool from "../config/db.js";
 
-export default function Login() {
+const router = express.Router();
 
-  const API = "https://empatia-backend.onrender.com/api/users";
-  const navigate = useNavigate();
+/* =========================
+   REGISTER
+========================= */
+router.post("/register", async (req, res) => {
+  try {
+    const { nombre, edad, email, password } = req.body;
 
-  const [form, setForm] = useState({
-    nombre: "",
-    password: ""
-  });
-
-  const [loading, setLoading] = useState(false);
-
-  const handleLogin = async () => {
-    if (!form.nombre || !form.password) {
-      alert("Completa usuario y contraseña");
-      return;
+    if (!nombre || !password) {
+      return res.status(400).json({ error: "Faltan datos" });
     }
 
-    setLoading(true);
+    // verificar si existe
+    const exist = await pool.query(
+      "SELECT id_usuario FROM usuario WHERE nombre = $1 OR email = $2",
+      [nombre, email]
+    );
 
-    try {
-      const response = await fetch(
-        "https://empatia-backend.onrender.com/api/auth/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            nombre: form.nombre,
-            password: form.password
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        alert(data.error || "Usuario o contraseña incorrectos");
-        return;
-      }
-
-      // 💾 guardar sesión
-      localStorage.setItem(
-        "usuario",
-        JSON.stringify(data.user)
-      );
-
-      alert(`Bienvenido ${data.user.nombre}`);
-
-      // 🚪 redirección por rol
-      if (data.user.role === "admin") {
-        navigate("/admin");
-      } else {
-        navigate("/user");
-      }
-
-    } catch (error) {
-      console.error("❌ ERROR LOGIN:", error);
-      alert("Error conectando con el servidor");
-    } finally {
-      setLoading(false);
+    if (exist.rows.length > 0) {
+      return res.status(400).json({ error: "Usuario ya existe" });
     }
-  };
 
-  return (
-    <div style={styles.container}>
-      <LoginMatrix />
+    const result = await pool.query(
+      `INSERT INTO usuario (nombre, edad, email, password_hash, role)
+       VALUES ($1, $2, $3, $4, 'user')
+       RETURNING id_usuario, nombre, email, role`,
+      [nombre, edad || null, email || null, password]
+    );
 
-      <div style={styles.centerBlock}>
-        <div style={styles.card}>
-          <h1 style={styles.title}>EmpatIA</h1>
-          <p style={styles.subtitle}>
-            IA emocional en tiempo real
-          </p>
+    res.json({
+      ok: true,
+      user: result.rows[0],
+    });
 
-          <div style={styles.formBox}>
-            <input
-              placeholder="Nombre de usuario"
-              value={form.nombre}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  nombre: e.target.value
-                })
-              }
-              style={styles.input}
-            />
+  } catch (error) {
+    console.error("REGISTER ERROR:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
-            <input
-              type="password"
-              placeholder="Contraseña"
-              value={form.password}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  password: e.target.value
-                })
-              }
-              style={styles.input}
-            />
+/* =========================
+   LOGIN
+========================= */
+router.post("/login", async (req, res) => {
+  try {
+    const { nombre, password } = req.body;
 
-            <button
-              style={styles.primaryBtn}
-              onClick={handleLogin}
-              disabled={loading}
-            >
-              {loading ? "Entrando..." : "Iniciar sesión"}
-            </button>
+    if (!nombre || !password) {
+      return res.status(400).json({ error: "Faltan datos" });
+    }
 
-            <button
-              style={styles.secondaryBtn}
-              onClick={() => navigate("/register")}
-            >
-              Registrarse
-            </button>
+    const result = await pool.query(
+      `SELECT id_usuario, nombre, email, role, password_hash
+       FROM usuario
+       WHERE nombre = $1 OR email = $1`,
+      [nombre]
+    );
 
-            <div style={styles.divider}>o</div>
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: "Usuario no existe" });
+    }
 
-            <button style={styles.googleBtn}>
-              🔵 Iniciar con Google
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+    const user = result.rows[0];
+
+    if (password !== user.password_hash) {
+      return res.status(401).json({ error: "Contraseña incorrecta" });
+    }
+
+    // 🔥 IMPORTANTE: siempre devolver role limpio
+    res.json({
+      ok: true,
+      user: {
+        id: user.id_usuario,
+        nombre: user.nombre,
+        email: user.email,
+        role: (user.role || "user").toLowerCase().trim(),
+      },
+    });
+
+  } catch (error) {
+    console.error("LOGIN ERROR:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+export default router;
