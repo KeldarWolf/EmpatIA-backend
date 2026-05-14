@@ -1,48 +1,52 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-
-import authRoutes from "./routers/authRoutes.js";
-import usersRoutes from "./routers/usersRoutes.js";
-
-dotenv.config();
 
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// log requests
-app.use((req, res, next) => {
-  console.log("➡️", req.method, req.url);
-  next();
-});
+const MODEL = "gemini-1.5-flash";
 
-// ROUTES
-app.use("/api/auth", authRoutes);
-app.use("/api/users", usersRoutes);
-
-// HOME
 app.get("/", (req, res) => {
-  res.send("EmpatIA Backend activo 🚀");
+  res.send("🚀 Backend EmpatIA activo");
 });
 
-// CHAT IA
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
+  if (!message) {
+    return res.json({
+      reply: "Te escucho 🤍",
+    });
+  }
+
   try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
+
         body: JSON.stringify({
           contents: [
             {
               parts: [
                 {
-                  text: message,
+                  text: `
+Eres EmpatIA.
+
+Reglas:
+- Responde corto
+- Máximo 2 frases
+- Natural y humano
+- Si el usuario no sabe qué hacer, sugiere:
+caminar, respirar, música o escribir
+
+Usuario: ${message}
+                  `,
                 },
               ],
             },
@@ -51,21 +55,38 @@ app.post("/chat", async (req, res) => {
       }
     );
 
-    const data = await r.json();
+    // 🔴 ERROR GEMINI
+    if (!response.ok) {
+      const err = await response.text();
+
+      console.error("GEMINI ERROR:", err);
+
+      return res.status(500).json({
+        reply: "No pude conectar con la IA 😢",
+      });
+    }
+
+    const data = await response.json();
+
+    console.log(data);
 
     const reply =
       data?.candidates?.[0]?.content?.parts?.[0]?.text ||
       "Te escucho 🤍";
 
     res.json({ reply });
+
   } catch (error) {
-    console.error("CHAT ERROR:", error);
-    res.status(500).json({ reply: "Error IA" });
+    console.error("SERVER ERROR:", error);
+
+    res.status(500).json({
+      reply: "Error del servidor 😢",
+    });
   }
 });
 
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log("🚀 Backend en puerto", PORT);
+  console.log("🚀 Backend corriendo en puerto", PORT);
 });
