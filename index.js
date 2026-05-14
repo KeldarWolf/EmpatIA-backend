@@ -1,6 +1,6 @@
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
+import dotenv from "dotenv";
 
 import authRoutes from "./routers/authRoutes.js";
 import usersRoutes from "./routers/usersRoutes.js";
@@ -12,11 +12,11 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// ✅ rutas auth
+// ✅ rutas existentes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
-// ✅ modelo IA
+// ✅ modelo Gemini
 const MODEL = "gemini-1.5-flash";
 
 // ✅ inicio
@@ -24,10 +24,11 @@ app.get("/", (req, res) => {
   res.send("🚀 Backend EmpatIA activo");
 });
 
-// ✅ CHAT IA
+// ✅ chat IA
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
+  // validar
   if (!message || !message.trim()) {
     return res.status(400).json({
       reply: "Mensaje vacío",
@@ -35,6 +36,7 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
+    // 🔥 request Gemini
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
@@ -56,9 +58,10 @@ Reglas:
 - Responde corto
 - Máximo 2 frases
 - Natural y humano
+- No hagas respuestas largas
 - Si el usuario no sabe qué hacer,
-  sugiere SOLO UNA actividad:
-  caminar, respirar, música o escribir
+  recomienda SOLO UNA actividad:
+  caminar, respirar, escuchar música o escribir
 
 Usuario: ${message}
                   `,
@@ -70,10 +73,11 @@ Usuario: ${message}
       }
     );
 
+    // ❌ error Gemini HTTP
     if (!response.ok) {
       const errText = await response.text();
 
-      console.error("GEMINI ERROR:");
+      console.error("GEMINI HTTP ERROR:");
       console.error(errText);
 
       return res.status(response.status).json({
@@ -81,16 +85,37 @@ Usuario: ${message}
       });
     }
 
+    // ✅ json Gemini
     const data = await response.json();
 
+    console.log(
+      "GEMINI RESPONSE:",
+      JSON.stringify(data, null, 2)
+    );
+
+    // ❌ error Gemini interno
+    if (data.error) {
+      return res.status(500).json({
+        reply: data.error.message,
+      });
+    }
+
+    // ✅ respuesta IA
     const reply =
       data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    res.json({
-      reply: reply || "Sin respuesta IA",
-    });
+    // ❌ sin texto
+    if (!reply) {
+      return res.status(500).json({
+        reply: "Gemini no devolvió respuesta",
+      });
+    }
+
+    // ✅ enviar respuesta
+    res.json({ reply });
 
   } catch (error) {
+    console.error("SERVER ERROR:");
     console.error(error);
 
     res.status(500).json({
@@ -99,7 +124,7 @@ Usuario: ${message}
   }
 });
 
-// ✅ puerto
+// ✅ puerto Render/local
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
