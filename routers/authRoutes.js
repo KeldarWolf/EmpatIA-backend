@@ -16,7 +16,6 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ error: "Faltan datos" });
     }
 
-    // evitar duplicados por nombre
     const exist = await pool.query(
       "SELECT id_usuario FROM usuario WHERE nombre = $1",
       [nombre]
@@ -37,7 +36,11 @@ router.post("/register", async (req, res) => {
 
     return res.json({
       ok: true,
-      user: result.rows[0],
+      user: {
+        id: result.rows[0].id_usuario,
+        nombre: result.rows[0].nombre,
+        role: result.rows[0].role?.trim().toLowerCase()
+      }
     });
 
   } catch (error) {
@@ -47,7 +50,7 @@ router.post("/register", async (req, res) => {
 });
 
 /* =========================
-   LOGIN (POR NOMBRE)
+   LOGIN
 ========================= */
 router.post("/login", async (req, res) => {
   try {
@@ -79,8 +82,8 @@ router.post("/login", async (req, res) => {
       user: {
         id: user.id_usuario,
         nombre: user.nombre,
-        role: user.role,
-      },
+        role: user.role?.trim().toLowerCase()
+      }
     });
 
   } catch (error) {
