@@ -16,6 +16,7 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ error: "Faltan datos" });
     }
 
+    // evitar duplicados por nombre
     const exist = await pool.query(
       "SELECT id_usuario FROM usuario WHERE nombre = $1",
       [nombre]
@@ -34,17 +35,16 @@ router.post("/register", async (req, res) => {
       [nombre, edad || null, email || null, password]
     );
 
-    res.json({
+    return res.json({
       ok: true,
       user: result.rows[0],
     });
 
   } catch (error) {
     console.error("❌ REGISTER ERROR:", error);
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
-
 
 /* =========================
    LOGIN (POR NOMBRE)
@@ -74,7 +74,7 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Contraseña incorrecta" });
     }
 
-    res.json({
+    return res.json({
       ok: true,
       user: {
         id: user.id_usuario,
@@ -85,9 +85,8 @@ router.post("/login", async (req, res) => {
 
   } catch (error) {
     console.error("❌ LOGIN ERROR:", error);
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 
 export default router;
-// == FUNCIONA 
