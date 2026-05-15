@@ -1,19 +1,23 @@
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
-
-import authRoutes from "./routers/authRoutes.js";
-import usersRoutes from "./routers/usersRoutes.js";
+import cors from "cors";
 
 dotenv.config();
 
 const app = express();
-
-app.use(cors());
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // =========================
-// LOG GLOBAL REQUESTS
+// MODELOS (fallback automático)
+// =========================
+const MODELS = [
+  "models/gemini-1.5-flash-latest",
+  "models/gemini-1.5-pro-latest",
+];
+
+// =========================
+// LOG
 // =========================
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
@@ -21,145 +25,97 @@ app.use((req, res, next) => {
 });
 
 // =========================
-// ROUTES
+// FUNCION IA CON FALLBACK
 // =========================
-app.use("/api/auth", authRoutes);
-app.use("/api/users", usersRoutes);
+const callGemini = async (model, message) => {
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: `
+Eres EmpatIA:
+- Responde corto
+- Empático
+- Humano
 
-app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA Backend activo");
-});
-
-// =========================
-// DETECTAR QUOTA
-// =========================
-const detectQuotaError = (r, data) => {
-  const msg = data?.error?.message?.toLowerCase?.() || "";
-
-  return (
-    r.status === 429 ||
-    msg.includes("quota") ||
-    msg.includes("resource_exhausted") ||
-    msg.includes("limit")
+Usuario: ${message}
+                `,
+              },
+            ],
+          },
+        ],
+      }),
+    }
   );
+
+  const data = await r.json();
+
+  const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  return {
+    ok: r.ok,
+    status: r.status,
+    reply,
+    data,
+  };
 };
 
 // =========================
-// CHAT IA (GEMINI FIXED)
+// CHAT IA (AUTO MODEL SELECT)
 // =========================
 app.post("/chat", async (req, res) => {
-  console.log("🔥 ENTRÓ A /CHAT");
-  console.log("📩 BODY:", req.body);
-
   const { message } = req.body;
 
-  if (!message || !message.trim()) {
+  console.log("🔥 ENTRÓ A /CHAT:", message);
+
+  if (!message?.trim()) {
     return res.json({
       reply: "🤍 Cuéntame cómo te sientes.",
       errorType: "EMPTY_MESSAGE",
     });
   }
 
-  try {
-    console.log("🤖 LLAMANDO A GEMINI...");
+  for (const model of MODELS) {
+    try {
+      console.log("🤖 Probando modelo:", model);
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `
-Eres EmpatIA:
-- Responde corto
-- Empático
-- Humano
-                  `,
-                },
-              ],
-            },
-          ],
-        }),
+      const result = await callGemini(model, message);
+
+      console.log("📡 STATUS:", result.status);
+
+      if (result.ok && result.reply) {
+        console.log("✅ USANDO MODELO:", model);
+        console.log("💬 RESPUESTA:", result.reply);
+
+        return res.json({
+          reply: result.reply,
+          errorType: null,
+          modelUsed: model,
+        });
       }
-    );
-
-    const data = await r.json();
-
-    console.log("📡 GEMINI STATUS:", r.status);
-    console.log("📦 GEMINI RAW:", JSON.stringify(data, null, 2));
-
-    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    const msg = data?.error?.message?.toLowerCase?.() || "";
-
-    const isQuota = detectQuotaError(r, data);
-    const isNetwork = !r.ok && !reply && !isQuota;
-
-    // =========================
-    // QUOTA / TOKEN ERROR
-    // =========================
-    if (isQuota) {
-      console.log("⚠️ QUOTA DETECTADO");
-
-      return res.json({
-        reply: "🤍 La IA está temporalmente saturada.",
-        errorType: "QUOTA_LIMIT",
-      });
+    } catch (err) {
+      console.log("❌ ERROR MODELO:", model, err.message);
     }
-
-    // =========================
-    // NETWORK ERROR
-    // =========================
-    if (isNetwork) {
-      console.log("⚠️ NETWORK ERROR");
-
-      return res.json({
-        reply: "🤍 Problema de conexión con la IA.",
-        errorType: "NETWORK_ERROR",
-      });
-    }
-
-    // =========================
-    // NO RESPONSE
-    // =========================
-    if (!reply) {
-      console.log("⚠️ SIN RESPUESTA GEMINI");
-
-      return res.json({
-        reply: "🤍 No pude generar respuesta.",
-        errorType: "GENERIC_ERROR",
-      });
-    }
-
-    // =========================
-    // SUCCESS
-    // =========================
-    console.log("✅ RESPUESTA IA:", reply);
-
-    return res.json({
-      reply,
-      errorType: null,
-    });
-
-  } catch (error) {
-    console.error("❌ SERVER ERROR:", error);
-
-    return res.json({
-      reply: "🤍 Error del servidor.",
-      errorType: "SERVER_ERROR",
-    });
   }
+
+  // fallback final
+  return res.json({
+    reply: "🤍 No pude responder ahora, pero sigo contigo.",
+    errorType: "ALL_MODELS_FAILED",
+  });
 });
 
 // =========================
-// START SERVER
+// START
 // =========================
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log(`🚀 EmpatIA backend en puerto ${PORT}`);
+  console.log("🚀 EmpatIA backend en puerto", PORT);
 });
