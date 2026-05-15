@@ -31,20 +31,24 @@ app.get("/", (req, res) => {
 });
 
 // =========================
-// 10 MODELOS (FALLBACK REAL)
+// OBTENER MODELOS REALES
 // =========================
-const MODELS = [
-  "models/gemini-1.5-flash-latest",
-  "models/gemini-1.5-pro-latest",
-  "models/gemini-1.5-flash",
-  "models/gemini-1.5-pro",
-  "models/gemini-1.0-pro",
-  "models/gemini-pro",
-  "models/gemini-pro-vision",
-  "models/gemini-1.0-flash",
-  "models/gemini-1.5-flash-001",
-  "models/gemini-1.5-pro-001",
-];
+const getModels = async () => {
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
+    );
+
+    const data = await r.json();
+
+    console.log("📦 MODELOS DISPONIBLES:", JSON.stringify(data, null, 2));
+
+    return data?.models?.map((m) => m.name) || [];
+  } catch (err) {
+    console.log("❌ ERROR LISTANDO MODELOS:", err.message);
+    return [];
+  }
+};
 
 // =========================
 // GEMINI CALL
@@ -87,7 +91,7 @@ Usuario: ${message}
 };
 
 // =========================
-// CHAT IA (AUTO DETECT 10 MODELOS)
+// CHAT IA (DINÁMICO REAL)
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
@@ -102,17 +106,28 @@ app.post("/chat", async (req, res) => {
     });
   }
 
-  for (const model of MODELS) {
+  const models = await getModels();
+
+  if (!models.length) {
+    return res.json({
+      reply: "🤍 No se pudieron cargar modelos de IA.",
+      errorType: "NO_MODELS",
+    });
+  }
+
+  console.log("🤖 MODELOS A USAR:", models);
+
+  for (const model of models) {
     try {
-      console.log("🤖 Probando modelo:", model);
+      console.log("⚡ Probando:", model);
 
       const result = await callGemini(model, message);
 
       console.log("📡 STATUS:", result.status);
 
-      // ✔ ÉXITO
       if (result.ok && result.reply) {
         console.log("✅ MODELO FUNCIONAL:", model);
+        console.log("💬 RESPUESTA:", result.reply);
 
         return res.json({
           reply: result.reply,
@@ -121,26 +136,11 @@ app.post("/chat", async (req, res) => {
         });
       }
 
-      // ❌ MODELO NO EXISTE (404)
-      if (result.status === 404) {
-        console.log("⚠️ MODELO NO DISPONIBLE:", model);
-        continue;
-      }
-
-      // ❌ QUOTA
-      if (result.status === 429) {
-        console.log("⚠️ QUOTA EN MODELO:", model);
-        continue;
-      }
-
     } catch (err) {
       console.log("❌ ERROR MODELO:", model, err.message);
     }
   }
 
-  // =========================
-  // FALLBACK FINAL HUMANO
-  // =========================
   return res.json({
     reply: "🤍 No pude responder ahora, pero sigo contigo.",
     errorType: "ALL_MODELS_FAILED",
