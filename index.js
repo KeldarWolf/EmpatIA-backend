@@ -1,21 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function Admin() {
-  const navigate = useNavigate();
   const API = "https://empatia-backend.onrender.com/api/users";
+  const PING_API = "https://empatia-backend.onrender.com/";
+
+  const navigate = useNavigate();
 
   const [users, setUsers] = useState([]);
+  const [edit, setEdit] = useState(null);
+
   const [section, setSection] = useState("dashboard");
+
+  // filtros
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+
+  // IA STATUS REAL (sin tokens)
+  const [iaStatus, setIaStatus] = useState({
+    ok: false,
+    latency: 0,
+  });
 
   // =========================
-  // AUTH
+  // AUTH CHECK
   // =========================
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem("user"));
+    const session = JSON.parse(localStorage.getItem("usuario"));
 
-    if (!user || user.role !== "admin") {
+    if (!session || session.role !== "admin") {
       navigate("/login");
     }
   }, []);
@@ -27,9 +40,10 @@ export default function Admin() {
     try {
       const res = await fetch(API);
       const data = await res.json();
-      setUsers(data);
+      setUsers(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.log(err);
+      console.error(err);
+      setUsers([]);
     }
   };
 
@@ -38,7 +52,37 @@ export default function Admin() {
   }, []);
 
   // =========================
-  // DELETE USER
+  // IA PING REAL (NO TOKENS)
+  // =========================
+  const pingIA = async () => {
+    try {
+      const start = Date.now();
+
+      const res = await fetch(PING_API);
+      await res.text();
+
+      const end = Date.now();
+
+      setIaStatus({
+        ok: res.ok,
+        latency: end - start,
+      });
+    } catch {
+      setIaStatus({
+        ok: false,
+        latency: 0,
+      });
+    }
+  };
+
+  useEffect(() => {
+    pingIA();
+    const interval = setInterval(pingIA, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // =========================
+  // CRUD
   // =========================
   const deleteUser = async (id) => {
     if (!window.confirm("¿Eliminar usuario?")) return;
@@ -47,23 +91,42 @@ export default function Admin() {
     loadUsers();
   };
 
+  const saveUser = async () => {
+    await fetch(`${API}/${edit.id_usuario}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(edit),
+    });
+
+    setEdit(null);
+    loadUsers();
+  };
+
+  // =========================
+  // FILTRO + BUSCADOR REAL
+  // =========================
+  const filteredUsers = useMemo(() => {
+    return users
+      .filter((u) => {
+        if (roleFilter === "all") return true;
+        return u.role === roleFilter;
+      })
+      .filter((u) => {
+        const q = search.toLowerCase();
+        return (
+          u.nombre?.toLowerCase().includes(q) ||
+          u.email?.toLowerCase().includes(q)
+        );
+      });
+  }, [users, search, roleFilter]);
+
   // =========================
   // LOGOUT
   // =========================
   const logout = () => {
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
+    localStorage.clear();
     navigate("/login");
-    window.location.reload();
   };
-
-  // =========================
-  // FILTER USERS
-  // =========================
-  const filteredUsers = users.filter((u) =>
-    u.nombre.toLowerCase().includes(search.toLowerCase()) ||
-    u.email.toLowerCase().includes(search.toLowerCase())
-  );
 
   return (
     <div style={styles.page}>
@@ -74,65 +137,72 @@ export default function Admin() {
           <h1 style={styles.title}>🛠 EMPATIA ADMIN PANEL</h1>
 
           <button style={styles.logoutBtn} onClick={logout}>
-            Logout
+            Cerrar sesión
           </button>
         </div>
 
         {/* MENU */}
         <div style={styles.menu}>
-          <button style={styles.menuBtn} onClick={() => setSection("dashboard")}>Dashboard</button>
-          <button style={styles.menuBtn} onClick={() => setSection("users")}>Usuarios</button>
-          <button style={styles.menuBtn} onClick={() => setSection("logs")}>Logs</button>
-          <button style={styles.menuBtn} onClick={() => setSection("metrics")}>Métricas</button>
-          <button style={styles.menuBtn} onClick={() => setSection("ai")}>IA</button>
-          <button style={styles.menuBtn} onClick={() => setSection("reports")}>Reportes</button>
+          <button onClick={() => setSection("dashboard")} style={styles.menuBtn}>
+            Dashboard
+          </button>
+
+          <button onClick={() => setSection("users")} style={styles.menuBtn}>
+            Usuarios
+          </button>
+
+          <button onClick={() => setSection("ia")} style={styles.menuBtn}>
+            IA
+          </button>
         </div>
 
-        {/* =========================
-            DASHBOARD
-        ========================= */}
+        {/* ================= DASHBOARD ================= */}
         {section === "dashboard" && (
-          <div style={styles.statsGrid}>
-
-            <div style={styles.statCard}>
-              <h3>🟢 Servidor</h3>
-              <p>Operativo</p>
+          <div style={styles.grid}>
+            <div style={styles.cardStat}>
+              👥 Usuarios <h2>{users.length}</h2>
             </div>
 
-            <div style={styles.statCard}>
-              <h3>👥 Usuarios</h3>
-              <p>{users.length}</p>
+            <div style={styles.cardStat}>
+              🤖 IA
+              <h2 style={{ color: iaStatus.ok ? "#00ffcc" : "red" }}>
+                {iaStatus.ok ? "ONLINE" : "OFFLINE"}
+              </h2>
             </div>
 
-            <div style={styles.statCard}>
-              <h3>🤖 IA</h3>
-              <p>Activa</p>
+            <div style={styles.cardStat}>
+              ⚡ Latencia
+              <h2>{iaStatus.latency} ms</h2>
             </div>
-
-            <div style={styles.statCard}>
-              <h3>📊 Sistema</h3>
-              <p>Estable</p>
-            </div>
-
           </div>
         )}
 
-        {/* =========================
-            USERS TABLE + SEARCH
-        ========================= */}
+        {/* ================= USERS ================= */}
         {section === "users" && (
-          <div>
+          <>
+            {/* FILTROS */}
+            <div style={styles.filtersBox}>
+              <input
+                style={styles.searchInput}
+                placeholder="🔎 Buscar usuario..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
 
-            <input
-              style={styles.search}
-              placeholder="🔎 Buscar usuario..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+              <select
+                style={styles.select}
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+              >
+                <option value="all">Todos</option>
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
 
+            {/* TABLA */}
             <div style={styles.table}>
-
-              <div style={styles.tableHeader}>
+              <div style={styles.rowHead}>
                 <span>Nombre</span>
                 <span>Email</span>
                 <span>Rol</span>
@@ -140,14 +210,16 @@ export default function Admin() {
               </div>
 
               {filteredUsers.map((u) => (
-                <div key={u.id_usuario} style={styles.tableRow}>
-
+                <div key={u.id_usuario} style={styles.row}>
                   <span>{u.nombre}</span>
                   <span>{u.email}</span>
                   <span style={styles.role}>{u.role}</span>
 
                   <div style={styles.actions}>
-                    <button style={styles.editBtn}>Editar</button>
+                    <button style={styles.editBtn} onClick={() => setEdit(u)}>
+                      Editar
+                    </button>
+
                     <button
                       style={styles.deleteBtn}
                       onClick={() => deleteUser(u.id_usuario)}
@@ -155,123 +227,98 @@ export default function Admin() {
                       Eliminar
                     </button>
                   </div>
-
                 </div>
               ))}
-
             </div>
+          </>
+        )}
+
+        {/* ================= IA ================= */}
+        {section === "ia" && (
+          <div style={styles.iaBox}>
+            <h2>🤖 Estado IA REAL</h2>
+
+            <p>
+              Estado:{" "}
+              <b style={{ color: iaStatus.ok ? "#00ffcc" : "red" }}>
+                {iaStatus.ok ? "Conectada" : "Sin conexión"}
+              </b>
+            </p>
+
+            <p>Ping backend: {iaStatus.latency} ms</p>
+
+            <button style={styles.menuBtn} onClick={pingIA}>
+              Re-chequear IA
+            </button>
           </div>
         )}
 
-        {/* =========================
-            LOGS
-        ========================= */}
-        {section === "logs" && (
-          <div style={styles.logBox}>
-            <h2 style={styles.sectionTitle}>📜 Logs del sistema</h2>
+        {/* ================= EDIT MODAL ================= */}
+        {edit && (
+          <div style={styles.modal}>
+            <div style={styles.modalBox}>
+              <input
+                style={styles.input}
+                value={edit.nombre}
+                onChange={(e) =>
+                  setEdit({ ...edit, nombre: e.target.value })
+                }
+              />
 
-            <div style={styles.logLine}>[OK] Admin login</div>
-            <div style={styles.logLine}>[AI] respuesta generada</div>
-            <div style={styles.logLine}>[WARN] intento acceso denegado</div>
-            <div style={styles.logLine}>[DB] usuario eliminado</div>
-            <div style={styles.logLine}>[SEC] sesión validada</div>
+              <input
+                style={styles.input}
+                value={edit.email || ""}
+                onChange={(e) =>
+                  setEdit({ ...edit, email: e.target.value })
+                }
+              />
+
+              <select
+                style={styles.input}
+                value={edit.role}
+                onChange={(e) =>
+                  setEdit({ ...edit, role: e.target.value })
+                }
+              >
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+
+              <div style={styles.actions}>
+                <button style={styles.editBtn} onClick={saveUser}>
+                  Guardar
+                </button>
+                <button style={styles.deleteBtn} onClick={() => setEdit(null)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
           </div>
         )}
-
-        {/* =========================
-            METRICS
-        ========================= */}
-        {section === "metrics" && (
-          <div style={styles.statsGrid}>
-
-            <div style={styles.statCard}>
-              <h3>CPU</h3>
-              <p>29%</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <h3>RAM</h3>
-              <p>60%</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <h3>API</h3>
-              <p>1204 req</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <h3>IA Latency</h3>
-              <p>1.2s</p>
-            </div>
-
-          </div>
-        )}
-
-        {/* =========================
-            IA
-        ========================= */}
-        {section === "ai" && (
-          <div style={styles.logBox}>
-            <h2 style={styles.sectionTitle}>🤖 IA Status</h2>
-
-            <div style={styles.logLine}>[OK] modelo conectado</div>
-            <div style={styles.logLine}>[OK] IA emocional activa</div>
-            <div style={styles.logLine}>[INFO] 90 conversaciones hoy</div>
-          </div>
-        )}
-
-        {/* =========================
-            REPORTS
-        ========================= */}
-        {section === "reports" && (
-          <div style={styles.box}>
-            <h2 style={styles.sectionTitle}>Reportes</h2>
-
-            <button style={styles.button}>Exportar usuarios</button>
-            <button style={styles.button}>Descargar PDF</button>
-            <button style={styles.button}>Reporte IA</button>
-            <button style={styles.button}>Auditoría sistema</button>
-          </div>
-        )}
-
-        {/* FOOTER */}
-        <button style={styles.backButton} onClick={logout}>
-          Cerrar sesión
-        </button>
 
       </div>
     </div>
   );
 }
 
-/* =========================
-   STYLES CYBERPUNK
-========================= */
 const styles = {
-
   page: {
     minHeight: "100vh",
-    background: "radial-gradient(circle at top, #0b0f14, #05070a)",
-    display: "flex",
-    justifyContent: "center",
+    background: "#05070a",
+    color: "#fff",
     padding: 20,
     fontFamily: "Arial",
   },
 
   container: {
-    width: "100%",
-    maxWidth: 1100,
-    background: "rgba(15,22,32,0.9)",
-    borderRadius: 20,
-    padding: 20,
-    border: "1px solid rgba(0,229,255,0.15)",
-    boxShadow: "0 0 50px rgba(0,229,255,0.08)",
+    maxWidth: 1200,
+    margin: "auto",
   },
 
   header: {
     display: "flex",
     justifyContent: "space-between",
-    marginBottom: 15,
+    alignItems: "center",
   },
 
   title: {
@@ -279,143 +326,137 @@ const styles = {
   },
 
   logoutBtn: {
-    background: "#ff3b3b",
+    background: "red",
     border: "none",
+    padding: 10,
     color: "#fff",
-    padding: "8px 12px",
     borderRadius: 8,
   },
 
   menu: {
     display: "flex",
     gap: 10,
-    flexWrap: "wrap",
-    marginBottom: 20,
+    marginTop: 15,
   },
 
   menuBtn: {
-    background: "rgba(0,229,255,0.12)",
-    border: "1px solid rgba(0,229,255,0.25)",
+    background: "#111",
+    border: "1px solid #00e5ff",
     color: "#00e5ff",
-    padding: "8px 12px",
+    padding: 10,
     borderRadius: 8,
-    cursor: "pointer",
   },
 
-  search: {
-    width: "100%",
-    padding: 10,
-    marginBottom: 10,
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3,1fr)",
+    gap: 15,
+    marginTop: 20,
+  },
+
+  cardStat: {
+    background: "#111",
+    padding: 20,
     borderRadius: 10,
-    border: "1px solid rgba(0,229,255,0.3)",
-    background: "#0b0f14",
+    border: "1px solid #00e5ff33",
+  },
+
+  filtersBox: {
+    display: "flex",
+    gap: 10,
+    marginTop: 20,
+  },
+
+  searchInput: {
+    flex: 2,
+    padding: 10,
+    borderRadius: 8,
+    background: "#111",
+    color: "#fff",
+    border: "1px solid #00e5ff33",
+  },
+
+  select: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 8,
+    background: "#111",
     color: "#00e5ff",
+    border: "1px solid #00e5ff33",
   },
 
   table: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
+    marginTop: 20,
   },
 
-  tableHeader: {
+  rowHead: {
     display: "grid",
-    gridTemplateColumns: "2fr 3fr 1fr 2fr",
+    gridTemplateColumns: "2fr 2fr 1fr 1fr",
     padding: 10,
-    background: "rgba(0,229,255,0.1)",
-    color: "#00e5ff",
-    fontWeight: "bold",
-    borderRadius: 8,
+    background: "#111",
   },
 
-  tableRow: {
+  row: {
     display: "grid",
-    gridTemplateColumns: "2fr 3fr 1fr 2fr",
+    gridTemplateColumns: "2fr 2fr 1fr 1fr",
     padding: 10,
-    background: "#111a24",
-    borderRadius: 8,
-    color: "#fff",
+    borderBottom: "1px solid #222",
   },
 
   role: {
     color: "#00e5ff",
-    textTransform: "uppercase",
   },
 
   actions: {
     display: "flex",
-    gap: 10,
+    gap: 5,
   },
 
   editBtn: {
     background: "#00e5ff",
     border: "none",
-    padding: "6px 10px",
+    padding: 6,
     borderRadius: 6,
   },
 
   deleteBtn: {
-    background: "#ff3b3b",
+    background: "red",
     border: "none",
-    padding: "6px 10px",
+    color: "#fff",
+    padding: 6,
     borderRadius: 6,
-    color: "#fff",
   },
 
-  logBox: {
-    background: "#050a10",
-    padding: 15,
-    borderRadius: 12,
+  modal: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.7)",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
-  logLine: {
-    fontFamily: "monospace",
-    color: "#00e5ff",
-    marginBottom: 6,
-  },
-
-  statCard: {
-    background: "#0f1620",
-    padding: 15,
-    borderRadius: 12,
-    color: "#fff",
-  },
-
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))",
-    gap: 15,
-  },
-
-  box: {
-    background: "#0f1620",
-    padding: 15,
-    borderRadius: 12,
-  },
-
-  sectionTitle: {
-    color: "#00e5ff",
-    marginBottom: 10,
-  },
-
-  button: {
-    width: "100%",
-    marginTop: 8,
-    padding: 10,
-    borderRadius: 8,
-    border: "1px solid #00e5ff",
-    background: "transparent",
-    color: "#00e5ff",
-    cursor: "pointer",
-  },
-
-  backButton: {
-    width: "100%",
-    marginTop: 15,
-    padding: 10,
+  modalBox: {
+    background: "#111",
+    padding: 20,
     borderRadius: 10,
-    background: "#00e5ff",
-    border: "none",
-    fontWeight: "bold",
+    width: 350,
+  },
+
+  input: {
+    width: "100%",
+    marginTop: 10,
+    padding: 10,
+    background: "#000",
+    color: "#fff",
+    border: "1px solid #00e5ff33",
+    borderRadius: 8,
+  },
+
+  iaBox: {
+    marginTop: 20,
+    background: "#111",
+    padding: 20,
+    borderRadius: 10,
   },
 };
