@@ -9,11 +9,18 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
+/* =========================
+   CORS FIX REAL (IMPORTANTE)
+========================= */
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+}));
+
 app.use(express.json());
 
 /* =========================
-   LOGS
+   LOG
 ========================= */
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
@@ -27,19 +34,11 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
 /* =========================
-   HOME
+   HEALTH CHECK
 ========================= */
 app.get("/", (req, res) => {
   res.send("EmpatIA Backend activo 🚀");
 });
-
-/* =========================
-   IA STATS (MEMORIA)
-========================= */
-let iaStats = {
-  requests: 0,
-  totalTime: 0,
-};
 
 /* =========================
    CHAT IA
@@ -47,16 +46,12 @@ let iaStats = {
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  const start = Date.now();
-
   try {
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
             {
@@ -73,12 +68,6 @@ app.post("/chat", async (req, res) => {
       data?.candidates?.[0]?.content?.parts?.[0]?.text ||
       "Te escucho 🤍";
 
-    const duration = Date.now() - start;
-
-    // 📊 STATS REALES (runtime)
-    iaStats.requests++;
-    iaStats.totalTime += duration;
-
     res.json({ reply });
 
   } catch (error) {
@@ -88,24 +77,7 @@ app.post("/chat", async (req, res) => {
 });
 
 /* =========================
-   IA STATUS (ADMIN)
-========================= */
-app.get("/api/ai/status", (req, res) => {
-  const avg =
-    iaStats.requests === 0
-      ? 0
-      : Math.round(iaStats.totalTime / iaStats.requests);
-
-  res.json({
-    online: true,
-    requests: iaStats.requests,
-    avgResponseTime: avg,
-    estimatedTokens: iaStats.requests * 120,
-  });
-});
-
-/* =========================
-   START SERVER
+   START
 ========================= */
 const PORT = process.env.PORT || 3001;
 
