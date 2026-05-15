@@ -14,7 +14,7 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // =========================
-// LOG MIDDLEWARE
+// LOG MIDDLEWARE (NO TOCAR)
 // =========================
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
@@ -22,13 +22,13 @@ app.use((req, res, next) => {
 });
 
 // =========================
-// ROUTES
+// ROUTES EXISTENTES
 // =========================
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
 // =========================
-// HEALTH CHECK
+// HEALTH
 // =========================
 app.get("/", (req, res) => {
   res.send("🚀 EmpatIA Backend activo 🤖");
@@ -42,28 +42,16 @@ const API_KEY = process.env.GEMINI_API_KEY;
 
 const SYSTEM_PROMPT = `
 Eres EmpatIA.
-- Respondes corto
+- Respuestas cortas
 - Empático
 - Humano
 - No técnico
 `;
 
 // =========================
-// CHAT IA
+// IA CALL SEGURA
 // =========================
-app.post("/chat", async (req, res) => {
-  const { message } = req.body;
-
-  console.log("🔥 ENTRÓ A /CHAT");
-  console.log("📩 MESSAGE:", message);
-
-  if (!message?.trim()) {
-    return res.json({
-      reply: "🤍 Cuéntame cómo te sientes.",
-      errorType: "EMPTY_MESSAGE",
-    });
-  }
-
+const callGemini = async (message) => {
   try {
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
@@ -89,47 +77,53 @@ app.post("/chat", async (req, res) => {
     const reply =
       data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    console.log("📡 STATUS:", r.status);
-
-    // =========================
-    // ERROR GEMINI
-    // =========================
-    if (!r.ok || !reply) {
-      console.log("❌ GEMINI ERROR:", data);
-
-      if (r.status === 429) {
-        return res.json({
-          reply:
-            "🤍 La IA está saturada en este momento. ¿Quieres iniciar una actividad para sentirte mejor?",
-          errorType: "TOKEN_LIMIT",
-        });
-      }
-
-      return res.json({
-        reply:
-          "🤍 No puedo responder ahora. ¿Quieres hacer una actividad conmigo?",
-        errorType: "GENERIC_ERROR",
-      });
-    }
-
-    return res.json({
-      reply,
-      model: MODEL,
-      errorType: null,
-    });
+    return { ok: r.ok, status: r.status, reply, raw: data };
   } catch (err) {
-    console.log("❌ SERVER ERROR:", err.message);
+    return { ok: false, status: 500, reply: null, error: err.message };
+  }
+};
+
+// =========================
+// CHAT IA (MEJORADO SIN ROMPER TU FLUJO)
+// =========================
+app.post("/chat", async (req, res) => {
+  const { message } = req.body;
+
+  console.log("🔥 ENTRÓ A /CHAT");
+  console.log("📩 MESSAGE:", message);
+
+  if (!message?.trim()) {
+    return res.json({
+      reply: "🤍 Cuéntame cómo te sientes.",
+      errorType: "EMPTY_MESSAGE",
+    });
+  }
+
+  const result = await callGemini(message);
+
+  console.log("📡 STATUS:", result.status);
+
+  // =========================
+  // FALLBACK SI FALLA IA
+  // =========================
+  if (!result.ok || !result.reply) {
+    console.log("❌ IA FALLÓ");
 
     return res.json({
       reply:
-        "🤍 Error de conexión. Pero estoy contigo, ¿quieres hacer una actividad?",
-      errorType: "NETWORK_ERROR",
+        "Lo siento... ahora mismo no puedo responder 🤍 ¿Quieres intentar una actividad para sentirte mejor?",
+      errorType: "IA_ERROR",
     });
   }
+
+  return res.json({
+    reply: result.reply,
+    model: MODEL,
+  });
 });
 
 // =========================
-// ACTIVIDADES CATÁLOGO
+// ACTIVIDADES (SUPABASE REST - TU MISMO SISTEMA)
 // =========================
 app.get("/actividades", async (req, res) => {
   try {
@@ -144,9 +138,10 @@ app.get("/actividades", async (req, res) => {
     );
 
     const data = await response.json();
-    res.json(data);
+
+    res.json(Array.isArray(data) ? data : []);
   } catch (err) {
-    res.status(500).json({ error: "Error cargando actividades" });
+    res.status(500).json([]);
   }
 });
 
@@ -188,14 +183,14 @@ app.post("/registro-actividad", async (req, res) => {
 
     const data = await response.json();
 
-    res.json(data[0]);
+    res.json(data?.[0] || { ok: true });
   } catch (err) {
-    res.status(500).json({ error: "Error guardando registro" });
+    res.status(500).json({ error: "Error guardando actividad" });
   }
 });
 
 // =========================
-// START SERVER
+// START SERVER (NO TOCAR)
 // =========================
 const PORT = process.env.PORT || 3001;
 
