@@ -15,7 +15,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// LOG REQUESTS
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
   next();
@@ -31,18 +30,18 @@ app.use("/api/users", usersRoutes);
 // HOME
 // =========================
 app.get("/", (req, res) => {
-  res.send("EmpatIA Backend activo 🚀");
+  res.send("🚀 EmpatIA Backend activo");
 });
 
 // =========================
-// CHAT IA (GEMINI)
+// CHAT IA
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
   if (!message || !message.trim()) {
-    return res.status(400).json({
-      reply: "¿Cómo te sientes hoy? 🤍",
+    return res.json({
+      reply: "🤍 Cuéntame cómo te sientes.",
     });
   }
 
@@ -61,10 +60,10 @@ app.post("/chat", async (req, res) => {
                 {
                   text: `
 Eres EmpatIA:
-- Responde corto y humano
-- 1 o 2 frases máximo
+- Responde corto (1-2 frases)
 - Acompaña emocionalmente primero
-- Si el usuario está mal o no sabe qué hacer, sugiere suavemente una actividad
+- Sé humano y cercano
+- Si el usuario está mal o confundido, ofrece ayuda suave
                   `,
                 },
               ],
@@ -75,30 +74,30 @@ Eres EmpatIA:
     );
 
     // =========================
-    // ERROR GEMINI
+    // ERROR IA
     // =========================
     if (!r.ok) {
-      const errText = await r.text();
+      const err = await r.text();
 
-      console.error("❌ GEMINI ERROR:", errText);
+      console.error("❌ GEMINI ERROR:", err);
 
-      // 🚨 SIN CUOTA / TOKENS
+      // 🚨 SIN CUOTA / TOKEN
       if (
         r.status === 429 ||
-        errText.includes("quota") ||
-        errText.includes("RESOURCE_EXHAUSTED")
+        err.includes("quota") ||
+        err.includes("RESOURCE_EXHAUSTED")
       ) {
         return res.json({
           reply:
-            "🤍 Ahora mismo la IA no está disponible por falta de tokens o cuota.\n\n¿Quieres que te ayude con una actividad para sentirte mejor?",
+            "🤍 Ahora mismo la IA no está disponible.\n\n¿Quieres que te ayude con una actividad para sentirte mejor?",
           activityMode: true,
         });
       }
 
-      // 🚨 MODELO O ERROR GENERAL
+      // 🚨 OTRO ERROR
       return res.json({
         reply:
-          "🤍 La IA no está disponible en este momento.\n\n¿Quieres que hagamos una actividad juntos?",
+          "🤍 La IA no está disponible en este momento.\n\n¿Quieres hacer una actividad?",
         activityMode: true,
       });
     }
@@ -111,28 +110,28 @@ Eres EmpatIA:
     if (!reply) {
       return res.json({
         reply:
-          "🤍 No pude generar respuesta ahora.\n\n¿Quieres hacer una actividad?",
+          "🤍 No pude responder ahora.\n\n¿Quieres hacer una actividad?",
         activityMode: true,
       });
     }
 
     return res.json({ reply });
   } catch (error) {
-    console.error("❌ CHAT ERROR:", error);
+    console.error("❌ SERVER ERROR:", error);
 
-    return res.status(500).json({
+    return res.json({
       reply:
-        "🤍 Error de conexión con la IA.\n\n¿Quieres intentar una actividad para relajarte?",
+        "🤍 Error de conexión.\n\n¿Quieres intentar una actividad para relajarte?",
       activityMode: true,
     });
   }
 });
 
 // =========================
-// START SERVER
+// START
 // =========================
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log(`🚀 EmpatIA backend corriendo en puerto ${PORT}`);
+  console.log(`🚀 EmpatIA backend en puerto ${PORT}`);
 });
