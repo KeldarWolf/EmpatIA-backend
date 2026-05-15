@@ -31,47 +31,9 @@ app.get("/", (req, res) => {
 });
 
 // =========================
-// CACHE DE MODELOS
+// MODELO ÚNICO (ESTABLE)
 // =========================
-let cachedModels = [];
-let lastUpdate = 0;
-
-// =========================
-// OBTENER MODELOS REALES
-// =========================
-const fetchModels = async () => {
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
-  );
-
-  const data = await r.json();
-
-  const models = (data.models || [])
-    .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-    .map(m => m.name);
-
-  console.log("📦 MODELOS REALES:", models);
-
-  return models;
-};
-
-// =========================
-// REFRESH CACHE (cada 10 min)
-// =========================
-const refreshModels = async () => {
-  try {
-    cachedModels = await fetchModels();
-    lastUpdate = Date.now();
-  } catch (err) {
-    console.log("❌ ERROR MODELOS:", err.message);
-  }
-};
-
-// inicial
-refreshModels();
-
-// cada 10 min
-setInterval(refreshModels, 1000 * 60 * 10);
+const MODEL = "models/gemma-4-26b-a4b-it";
 
 // =========================
 // PROMPT EMPATIA
@@ -81,14 +43,15 @@ Eres EmpatIA.
 - Responde corto
 - Empático
 - Humano
+- No devuelvas instrucciones ni análisis del prompt
 `;
 
 // =========================
 // GEMINI CALL
 // =========================
-const callGemini = async (model, message) => {
+const callGemini = async (message) => {
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -116,7 +79,7 @@ const callGemini = async (model, message) => {
 };
 
 // =========================
-// CHAT IA (USANDO CACHE + AUTO SELECCIÓN)
+// CHAT IA
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
@@ -131,66 +94,31 @@ app.post("/chat", async (req, res) => {
     });
   }
 
-  if (!cachedModels.length) {
-    return res.json({
-      reply: "🤍 Aún cargando modelos de IA...",
-      errorType: "NO_MODELS",
-    });
-  }
-
-  // 🔥 elegir modelo preferido (flash primero)
-  const preferredModel =
-    cachedModels.find(m => m.includes("flash")) || cachedModels[0];
-
-  console.log("🤖 MODELO SELECCIONADO:", preferredModel);
-
-  // =========================
-  // INTENTO 1 (PREFERIDO)
-  // =========================
   try {
-    const r1 = await callGemini(preferredModel, message);
+    const result = await callGemini(message);
 
-    console.log("📡 STATUS:", r1.status);
+    console.log("📡 STATUS:", result.status);
 
-    if (r1.ok && r1.reply) {
+    if (result.ok && result.reply) {
       return res.json({
-        reply: r1.reply,
-        modelUsed: preferredModel,
+        reply: result.reply,
+        modelUsed: MODEL,
       });
     }
+
+    return res.json({
+      reply: "🤍 Lo siento, ahora mismo no puedo responder.",
+      errorType: "MODEL_ERROR",
+    });
+
   } catch (err) {
-    console.log("❌ ERROR MODELO PREFERIDO");
+    console.log("❌ ERROR IA:", err.message);
+
+    return res.json({
+      reply: "🤍 Error de conexión, intenta nuevamente.",
+      errorType: "NETWORK_ERROR",
+    });
   }
-
-  // =========================
-  // FALLBACK 1 SOLO (NO LOOP INFINITO)
-  // =========================
-  for (const model of cachedModels) {
-    if (model === preferredModel) continue;
-
-    try {
-      console.log("🤖 FALLBACK:", model);
-
-      const r = await callGemini(model, message);
-
-      if (r.ok && r.reply) {
-        return res.json({
-          reply: r.reply,
-          modelUsed: model,
-        });
-      }
-    } catch (err) {
-      console.log("❌ ERROR FALLBACK:", model);
-    }
-  }
-
-  // =========================
-  // FALLBACK FINAL
-  // =========================
-  return res.json({
-    reply: "🤍 Lo siento... sigo aquí contigo.",
-    errorType: "ALL_MODELS_FAILED",
-  });
 });
 
 // =========================
