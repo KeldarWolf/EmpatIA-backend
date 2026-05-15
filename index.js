@@ -7,6 +7,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 
+import pool from "./config/db.js";
+
 import authRoutes from "./routers/authRoutes.js";
 import usersRoutes from "./routers/usersRoutes.js";
 
@@ -26,6 +28,17 @@ app.use((req, res, next) => {
 });
 
 // =========================
+// TEST DB
+// =========================
+pool.query("SELECT NOW()")
+  .then((r) => {
+    console.log("✅ DB CONECTADA:", r.rows[0]);
+  })
+  .catch((err) => {
+    console.log("❌ DB ERROR:", err.message);
+  });
+
+// =========================
 // ROUTES
 // =========================
 app.use("/api/auth", authRoutes);
@@ -42,25 +55,29 @@ app.get("/", (req, res) => {
 // CONFIG IA
 // =========================
 const MODEL = "models/gemini-2.5-flash";
+
 const API_KEY = process.env.GEMINI_API_KEY;
 
 const SYSTEM_PROMPT = `
 Eres EmpatIA.
 Respondes corto, empático y humano.
 No eres técnico.
-Si no puedes ayudar, sugieres una actividad suave.
+Si no puedes ayudar, sugieres actividades suaves.
 `;
 
 // =========================
-// IA
+// GEMINI
 // =========================
 async function callGemini(message) {
   try {
+
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           contents: [
             {
@@ -84,10 +101,13 @@ async function callGemini(message) {
       ok: r.ok,
       reply,
     };
+
   } catch (err) {
+
     return {
       ok: false,
       reply: null,
+      error: err.message,
     };
   }
 }
@@ -96,6 +116,7 @@ async function callGemini(message) {
 // CHAT
 // =========================
 app.post("/chat", async (req, res) => {
+
   const { message } = req.body;
 
   console.log("🔥 CHAT:", message);
@@ -110,6 +131,7 @@ app.post("/chat", async (req, res) => {
   const result = await callGemini(message);
 
   if (!result.ok || !result.reply) {
+
     return res.json({
       reply:
         "🤍 Ahora mismo no puedo responder… ¿quieres hacer una actividad?",
@@ -124,34 +146,12 @@ app.post("/chat", async (req, res) => {
 });
 
 // =========================
-// OBTENER ACTIVIDADES BASE
-// =========================
-app.get("/actividades", async (req, res) => {
-  try {
-    const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/actividad?select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
-    );
-
-    const data = await r.json();
-
-    res.json(data || []);
-  } catch (err) {
-    console.log(err);
-    res.json([]);
-  }
-});
-
-// =========================
 // REGISTRAR ACTIVIDAD
 // =========================
 app.post("/registro-actividad", async (req, res) => {
+
   try {
+
     const {
       id_usuario,
       nombre_actividad,
@@ -171,96 +171,86 @@ app.post("/registro-actividad", async (req, res) => {
     // =========================
     // BUSCAR ACTIVIDAD
     // =========================
-    const search = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/actividad?nombre=eq.${encodeURIComponent(
-        nombre_actividad
-      )}&select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
+    let actividad = await pool.query(
+      `
+      SELECT id_actividad
+      FROM actividad
+      WHERE nombre = $1
+      `,
+      [nombre_actividad]
     );
 
-    const actividades = await search.json();
-
-    let id_actividad = null;
+    let id_actividad;
 
     // =========================
     // SI NO EXISTE -> CREAR
     // =========================
-    if (!actividades?.length) {
-      console.log("🆕 CREANDO ACTIVIDAD");
+    if (actividad.rows.length === 0) {
 
-      const create = await fetch(
-        `${process.env.SUPABASE_URL}/rest/v1/actividad`,
-        {
-          method: "POST",
-          headers: {
-            apikey: process.env.SUPABASE_KEY,
-            Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-            "Content-Type": "application/json",
-            Prefer: "return=representation",
-          },
-          body: JSON.stringify([
-            {
-              nombre: nombre_actividad,
-              descripcion: nombre_actividad,
-              categoria: "general",
-            },
-          ]),
-        }
+      console.log("➕ CREANDO ACTIVIDAD");
+
+      const nuevaActividad = await pool.query(
+        `
+        INSERT INTO actividad (
+          nombre,
+          categoria
+        )
+        VALUES ($1, $2)
+        RETURNING id_actividad
+        `,
+        [nombre_actividad, "general"]
       );
 
-      const nuevaActividad = await create.json();
+      id_actividad =
+        nuevaActividad.rows[0].id_actividad;
 
-      console.log("✅ ACTIVIDAD CREADA:", nuevaActividad);
-
-      id_actividad = nuevaActividad?.[0]?.id_actividad;
     } else {
-      id_actividad = actividades[0].id_actividad;
+
+      console.log("✅ ACTIVIDAD EXISTE");
+
+      id_actividad =
+        actividad.rows[0].id_actividad;
     }
 
-    console.log("🎯 ID ACTIVIDAD:", id_actividad);
-
     // =========================
-    // INSERTAR REGISTRO
+    // INSERT REGISTRO
     // =========================
-    const insert = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/registroactividad`,
-      {
-        method: "POST",
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify([
-          {
-            id_usuario,
-            id_actividad,
-            nombre_actividad,
-            puntaje_agrado: puntaje_agrado || 7,
-            frecuencia_deseada:
-              frecuencia_deseada || "media",
-            reaccion: reaccion || "positiva",
-          },
-        ]),
-      }
+    const result = await pool.query(
+      `
+      INSERT INTO registroactividad (
+        id_usuario,
+        id_actividad,
+        nombre_actividad,
+        puntaje_agrado,
+        frecuencia_deseada,
+        reaccion
+      )
+      VALUES ($1,$2,$3,$4,$5,$6)
+      RETURNING *
+      `,
+      [
+        id_usuario,
+        id_actividad,
+        nombre_actividad,
+        puntaje_agrado || 7,
+        frecuencia_deseada || "media",
+        reaccion || "positiva",
+      ]
     );
 
-    const data = await insert.json();
+    console.log("✅ REGISTRO GUARDADO");
 
-    console.log("✅ REGISTRO:", data);
+    return res.json({
+      ok: true,
+      registro: result.rows[0],
+    });
 
-    res.json(data?.[0] || {});
   } catch (err) {
+
     console.log("❌ ERROR:", err);
 
-    res.status(500).json({
-      error: "Error guardando actividad",
+    return res.status(500).json({
+      error: err.message,
     });
   }
 });
@@ -269,29 +259,32 @@ app.post("/registro-actividad", async (req, res) => {
 // MIS ACTIVIDADES
 // =========================
 app.get("/mis-actividades/:id", async (req, res) => {
+
   try {
-    const { id } = req.params;
+
+    const id = req.params.id;
 
     console.log("👤 USER ID:", id);
 
-    const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id}&order=creado_en.desc&select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM registroactividad
+      WHERE id_usuario = $1
+      ORDER BY creado_en DESC
+      `,
+      [id]
     );
 
-    const data = await r.json();
+    console.log("✅ ACTIVIDADES:", result.rows.length);
 
-    console.log("📦 ACTIVIDADES USER:", data);
+    return res.json(result.rows);
 
-    res.json(data || []);
   } catch (err) {
-    console.log(err);
-    res.json([]);
+
+    console.log("❌ ERROR:", err);
+
+    return res.status(500).json([]);
   }
 });
 
