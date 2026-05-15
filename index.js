@@ -9,9 +9,6 @@ dotenv.config();
 
 const app = express();
 
-// =========================
-// MIDDLEWARE
-// =========================
 app.use(cors());
 app.use(express.json());
 
@@ -20,18 +17,28 @@ app.use((req, res, next) => {
   next();
 });
 
-// =========================
-// ROUTES
-// =========================
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
-// =========================
-// HOME
-// =========================
 app.get("/", (req, res) => {
   res.send("🚀 EmpatIA Backend activo");
 });
+
+// =========================
+// DETECTOR DE CUOTA
+// =========================
+const detectQuotaError = (r, data) => {
+  const msg =
+    data?.error?.message?.toLowerCase() || "";
+
+  return (
+    r.status === 429 ||
+    msg.includes("quota") ||
+    msg.includes("resource_exhausted") ||
+    msg.includes("rate limit") ||
+    msg.includes("limit exceeded")
+  );
+};
 
 // =========================
 // CHAT IA
@@ -61,10 +68,9 @@ app.post("/chat", async (req, res) => {
                   text: `
 Eres EmpatIA:
 - Responde corto (1-2 frases)
-- Acompaña emocionalmente primero
-- Sé humano y cercano
-- Si el usuario está mal o confundido, ofrece ayuda suave
-                  `,
+- Empático y humano
+- Acompaña emocionalmente
+                `,
                 },
               ],
             },
@@ -73,63 +79,59 @@ Eres EmpatIA:
       }
     );
 
-    // =========================
-    // ERROR IA
-    // =========================
-    if (!r.ok) {
-      const err = await r.text();
-
-      console.error("❌ GEMINI ERROR:", err);
-
-      // 🚨 SIN CUOTA / TOKEN
-      if (
-        r.status === 429 ||
-        err.includes("quota") ||
-        err.includes("RESOURCE_EXHAUSTED")
-      ) {
-        return res.json({
-          reply:
-            "🤍 Ahora mismo la IA no está disponible.\n\n¿Quieres que te ayude con una actividad para sentirte mejor?",
-          activityMode: true,
-        });
-      }
-
-      // 🚨 OTRO ERROR
-      return res.json({
-        reply:
-          "🤍 La IA no está disponible en este momento.\n\n¿Quieres hacer una actividad?",
-        activityMode: true,
-      });
-    }
-
     const data = await r.json();
 
     const reply =
       data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    if (!reply) {
+    // =========================
+    // ERROR IA
+    // =========================
+    if (!r.ok || !reply) {
+      const isQuota = detectQuotaError(r, data);
+
+      console.error("❌ GEMINI ERROR COMPLETO:", data);
+
+      // 🔴 CASO: SIN TOKENS / CUOTA
+      if (isQuota) {
+        return res.json({
+          reply:
+            "🤍 Ahora mismo no tengo tokens disponibles para responder.",
+          errorType: "TOKEN_LIMIT",
+          activityMode: true,
+        });
+      }
+
+      // 🔴 OTRO ERROR
       return res.json({
         reply:
-          "🤍 No pude responder ahora.\n\n¿Quieres hacer una actividad?",
+          "🤍 No puedo responder en este momento.",
+        errorType: "GENERIC_ERROR",
         activityMode: true,
       });
     }
 
-    return res.json({ reply });
+    // =========================
+    // OK
+    // =========================
+    return res.json({
+      reply,
+      errorType: null,
+      activityMode: false,
+    });
+
   } catch (error) {
     console.error("❌ SERVER ERROR:", error);
 
     return res.json({
       reply:
-        "🤍 Error de conexión.\n\n¿Quieres intentar una actividad para relajarte?",
+        "🤍 Error de conexión con la IA.",
+      errorType: "NETWORK_ERROR",
       activityMode: true,
     });
   }
 });
 
-// =========================
-// START
-// =========================
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
