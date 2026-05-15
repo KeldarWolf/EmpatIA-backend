@@ -1,3 +1,7 @@
+// =========================
+// index.js
+// =========================
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -42,13 +46,15 @@ const API_KEY = process.env.GEMINI_API_KEY;
 
 const SYSTEM_PROMPT = `
 Eres EmpatIA.
-Respondes corto, empático y humano.
-No eres técnico.
-Si no puedes ayudar, sugieres una actividad suave.
+- Respuestas cortas
+- Empático
+- Humano
+- No técnico
+- Si no puedes responder sugieres actividades suaves
 `;
 
 // =========================
-// IA
+// IA CALL
 // =========================
 async function callGemini(message) {
   try {
@@ -56,7 +62,9 @@ async function callGemini(message) {
       `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           contents: [
             {
@@ -79,6 +87,7 @@ async function callGemini(message) {
     return {
       ok: r.ok,
       reply,
+      raw: data,
     };
   } catch (err) {
     return {
@@ -90,10 +99,12 @@ async function callGemini(message) {
 }
 
 // =========================
-// CHAT
+// CHAT IA
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
+
+  console.log("🔥 CHAT:", message);
 
   if (!message?.trim()) {
     return res.json({
@@ -104,7 +115,12 @@ app.post("/chat", async (req, res) => {
 
   const result = await callGemini(message);
 
+  // =========================
+  // FALLBACK IA
+  // =========================
   if (!result.ok || !result.reply) {
+    console.log("❌ IA ERROR:", result.error);
+
     return res.json({
       reply:
         "🤍 Ahora mismo no puedo responder… ¿quieres hacer una actividad?",
@@ -115,11 +131,12 @@ app.post("/chat", async (req, res) => {
   return res.json({
     reply: result.reply,
     model: MODEL,
+    errorType: null,
   });
 });
 
 // =========================
-// OBTENER CATÁLOGO ACTIVIDADES
+// OBTENER ACTIVIDADES
 // =========================
 app.get("/actividades", async (req, res) => {
   try {
@@ -135,65 +152,28 @@ app.get("/actividades", async (req, res) => {
 
     const data = await r.json();
 
-    res.json(data || []);
-  } catch {
-    res.json([]);
+    return res.json(data || []);
+  } catch (err) {
+    console.log(err);
+
+    return res.status(500).json([]);
   }
 });
 
 // =========================
-// GUARDAR ACTIVIDAD USUARIO
+// REGISTRAR ACTIVIDAD
 // =========================
-app.post("/guardar-actividad-usuario", async (req, res) => {
-  const { id_usuario, texto } = req.body;
+app.post("/registro-actividad", async (req, res) => {
+  const {
+    id_usuario,
+    id_actividad,
+    puntaje_agrado,
+    frecuencia_deseada,
+    reaccion,
+  } = req.body;
 
   try {
-    // BUSCAR ACTIVIDAD
-    let r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/actividad?nombre=eq.${encodeURIComponent(
-        texto
-      )}&select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
-    );
-
-    let actividad = await r.json();
-
-    let idActividad = actividad?.[0]?.id_actividad;
-
-    // CREAR SI NO EXISTE
-    if (!idActividad) {
-      const create = await fetch(
-        `${process.env.SUPABASE_URL}/rest/v1/actividad`,
-        {
-          method: "POST",
-          headers: {
-            apikey: process.env.SUPABASE_KEY,
-            Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-            "Content-Type": "application/json",
-            Prefer: "return=representation",
-          },
-          body: JSON.stringify([
-            {
-              nombre: texto,
-              descripcion: texto,
-              categoria: "personalizada",
-            },
-          ]),
-        }
-      );
-
-      const nuevaActividad = await create.json();
-
-      idActividad = nuevaActividad?.[0]?.id_actividad;
-    }
-
-    // REGISTRAR AL USUARIO
-    const save = await fetch(
+    const r = await fetch(
       `${process.env.SUPABASE_URL}/rest/v1/registroactividad`,
       {
         method: "POST",
@@ -206,24 +186,26 @@ app.post("/guardar-actividad-usuario", async (req, res) => {
         body: JSON.stringify([
           {
             id_usuario,
-            id_actividad: idActividad,
+            id_actividad,
+            puntaje_agrado,
+            frecuencia_deseada,
+            reaccion,
             fecha: new Date().toISOString(),
-            puntaje_agrado: 5,
-            frecuencia_deseada: "media",
-            reaccion: "guardada",
           },
         ]),
       }
     );
 
-    const data = await save.json();
+    const data = await r.json();
 
-    res.json(data?.[0] || { ok: true });
+    console.log("✅ ACTIVIDAD REGISTRADA:", data);
+
+    return res.json(data?.[0] || { ok: true });
   } catch (err) {
-    console.log(err);
+    console.log("❌ ERROR REGISTRO:", err);
 
-    res.status(500).json({
-      error: "Error guardando actividad",
+    return res.status(500).json({
+      error: "DB_ERROR",
     });
   }
 });
@@ -231,12 +213,12 @@ app.post("/guardar-actividad-usuario", async (req, res) => {
 // =========================
 // ACTIVIDADES DEL USUARIO
 // =========================
-app.get("/actividades-usuario/:id", async (req, res) => {
-  const { id } = req.params;
+app.get("/mis-actividades/:id_usuario", async (req, res) => {
+  const { id_usuario } = req.params;
 
   try {
     const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id}&select=*,actividad(*)`,
+      `${process.env.SUPABASE_URL}/rest/v1/registroactividad?select=*,actividad(*)&id_usuario=eq.${id_usuario}&order=fecha.desc`,
       {
         headers: {
           apikey: process.env.SUPABASE_KEY,
@@ -247,14 +229,18 @@ app.get("/actividades-usuario/:id", async (req, res) => {
 
     const data = await r.json();
 
-    res.json(data || []);
-  } catch {
-    res.json([]);
+    console.log("📌 MIS ACTIVIDADES:", data);
+
+    return res.json(data || []);
+  } catch (err) {
+    console.log("❌ ERROR ACTIVIDADES:", err);
+
+    return res.status(500).json([]);
   }
 });
 
 // =========================
-// START
+// START SERVER
 // =========================
 const PORT = process.env.PORT || 3001;
 
