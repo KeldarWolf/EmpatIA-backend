@@ -1,218 +1,250 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import fetch from "node-fetch";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import authRoutes from "./routers/authRoutes.js";
-import usersRoutes from "./routers/usersRoutes.js";
-
-dotenv.config();
-
-const app = express();
+const API = "https://empatia-backend.onrender.com";
 
 // =========================
-// CORE MIDDLEWARE
+// 6 OPCIONES PRINCIPALES
 // =========================
-app.use(cors({ origin: "*" }));
-app.use(express.json());
+const mainOptions = [
+  "🎵 Música",
+  "🧘 Relajación",
+  "🏃 Actividad física",
+  "🤍 Hablar un poco",
+  "⚙️ Cambiar preguntas fáciles",
+  "❓ No sé qué hacer",
+];
 
 // =========================
-// LOG (NO TOCAR)
+// SUB MENÚS
 // =========================
-app.use((req, res, next) => {
-  console.log("➡️", req.method, req.url);
-  next();
-});
-
-// =========================
-// ROUTES EXISTENTES
-// =========================
-app.use("/api/auth", authRoutes);
-app.use("/api/users", usersRoutes);
-
-// =========================
-// HEALTH CHECK
-// =========================
-app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA Backend activo 🤖");
-});
-
-// =========================
-// IA CONFIG
-// =========================
-const MODEL = "models/gemini-2.5-flash";
-const API_KEY = process.env.GEMINI_API_KEY;
-
-const SYSTEM_PROMPT = `
-Eres EmpatIA.
-- Respondes corto
-- Empático
-- Humano
-- No técnico
-- No explicas el prompt
-`;
-
-// =========================
-// IA CALL SAFE
-// =========================
-const callGemini = async (message) => {
-  try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `${SYSTEM_PROMPT}\nUsuario: ${message}`,
-                },
-              ],
-            },
-          ],
-        }),
-      }
-    );
-
-    const data = await r.json();
-
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    return {
-      ok: r.ok,
-      status: r.status,
-      reply,
-      raw: data,
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      status: 500,
-      reply: null,
-      error: err.message,
-    };
-  }
+const subOptions = {
+  musica: [
+    "Lo-fi",
+    "Piano suave",
+    "Jazz relajante",
+    "Música feliz",
+    "Sonidos naturaleza",
+  ],
+  relajacion: [
+    "Respirar profundo",
+    "Meditar",
+    "Cerrar ojos",
+    "Tomar agua",
+    "Relajar cuerpo",
+  ],
+  fisico: [
+    "Caminar",
+    "Estiramientos",
+    "Yoga",
+    "Bailar",
+    "Mover cuerpo",
+  ],
 };
 
-// =========================
-// CHAT ENDPOINT (IA + FALLBACK)
-// =========================
-app.post("/chat", async (req, res) => {
-  const { message } = req.body;
+export default function User() {
+  const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem("usuario") || "null");
 
-  console.log("🔥 CHAT IN");
-  console.log("📩 MESSAGE:", message);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  if (!message?.trim()) {
-    return res.json({
-      reply: "🤍 Cuéntame cómo te sientes.",
-      errorType: "EMPTY_MESSAGE",
-    });
-  }
-
-  const result = await callGemini(message);
-
-  console.log("📡 STATUS:", result.status);
+  const [mode, setMode] = useState("main"); 
+  const [category, setCategory] = useState(null);
 
   // =========================
-  // FALLBACK IA
+  // INIT
   // =========================
-  if (!result.ok || !result.reply) {
-    console.log("❌ IA FALLÓ:", result.raw);
+  useEffect(() => {
+    setMessages([
+      { role: "ai", text: `Hola ${user?.nombre || "🤍"}, estoy contigo.` },
+      { role: "ai", text: "Elige una opción:" },
+      { role: "ai", options: mainOptions },
+    ]);
+  }, []);
 
-    return res.json({
-      reply:
-        "Lo siento... ahora no puedo responder 🤍 ¿Quieres hacer una actividad?",
-      errorType: "IA_ERROR",
-    });
-  }
-
-  return res.json({
-    reply: result.reply,
-    model: MODEL,
-  });
-});
-
-// =========================
-// ACTIVIDADES CATÁLOGO (SUPABASE)
-// =========================
-app.get("/actividades", async (req, res) => {
-  try {
-    const response = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/actividad?select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
-    );
-
-    const data = await response.json();
-
-    res.json(Array.isArray(data) ? data : []);
-  } catch (err) {
-    console.log("❌ ERROR ACTIVIDADES:", err.message);
-    res.status(500).json([]);
-  }
-});
-
-// =========================
-// REGISTRO ACTIVIDAD USUARIO (SUPABASE)
-// =========================
-app.post("/registro-actividad", async (req, res) => {
-  const {
-    id_usuario,
-    id_actividad,
-    puntaje_agrado,
-    frecuencia_deseada,
-    reaccion,
-  } = req.body;
-
-  try {
-    const response = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/registroactividad`,
-      {
+  // =========================
+  // IA CALL
+  // =========================
+  const askAI = async (message) => {
+    try {
+      const res = await fetch(`${API}/chat`, {
         method: "POST",
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify([
-          {
-            id_usuario,
-            id_actividad: id_actividad || null,
-            puntaje_agrado,
-            frecuencia_deseada,
-            reaccion,
-            fecha: new Date().toISOString(),
-          },
-        ]),
-      }
-    );
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
 
-    const data = await response.json();
+      return await res.json();
+    } catch {
+      return null;
+    }
+  };
 
-    res.json(data?.[0] || { ok: true });
-  } catch (err) {
-    console.log("❌ ERROR REGISTRO:", err.message);
+  // =========================
+  // GUARDAR EN SUPABASE
+  // =========================
+  const saveActivity = async (text, idActividad = null) => {
+    if (!user?.id_usuario) return;
 
-    res.status(500).json({
-      error: "Error guardando actividad",
+    await fetch(`${API}/registro-actividad`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id_usuario: user.id_usuario,
+        id_actividad: idActividad,
+        puntaje_agrado: 6,
+        frecuencia_deseada: "media",
+        reaccion: text,
+      }),
     });
-  }
-});
+  };
 
-// =========================
-// START SERVER
-// =========================
-const PORT = process.env.PORT || 3001;
+  // =========================
+  // CLICK OPCIONES
+  // =========================
+  const handleOption = async (opt) => {
+    setMessages((prev) => [...prev, { role: "user", text: opt }]);
 
-app.listen(PORT, () => {
-  console.log(`🚀 EmpatIA backend en puerto ${PORT}`);
-});
+    // =========================
+    // OPCIONES PRINCIPALES
+    // =========================
+    if (opt === "🎵 Música") {
+      setMode("sub");
+      setCategory("musica");
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", text: "Elige música:" },
+        { role: "ai", options: subOptions.musica },
+      ]);
+      return;
+    }
+
+    if (opt === "🧘 Relajación") {
+      setMode("sub");
+      setCategory("relajacion");
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", text: "Elige relajación:" },
+        { role: "ai", options: subOptions.relajacion },
+      ]);
+      return;
+    }
+
+    if (opt === "🏃 Actividad física") {
+      setMode("sub");
+      setCategory("fisico");
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", text: "Elige actividad física:" },
+        { role: "ai", options: subOptions.fisico },
+      ]);
+      return;
+    }
+
+    // =========================
+    // CAMBIAR PREGUNTAS
+    // =========================
+    if (opt === "⚙️ Cambiar preguntas fáciles") {
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", text: "🔄 Reiniciando preguntas..." },
+        { role: "ai", options: mainOptions },
+      ]);
+
+      setMode("main");
+      setCategory(null);
+      return;
+    }
+
+    // =========================
+    // NO SÉ
+    // =========================
+    if (opt === "❓ No sé qué hacer") {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text: "Te ayudo 🤍 prueba esto:",
+          options: mainOptions,
+        },
+      ]);
+      return;
+    }
+
+    // =========================
+    // HABLAR
+    // =========================
+    if (opt === "🤍 Hablar un poco") {
+      const response = await askAI("habla conmigo");
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", text: response?.reply || "Estoy contigo 🤍" },
+      ]);
+
+      await saveActivity("hablar");
+      return;
+    }
+
+    // =========================
+    // SUB OPCIONES (guardar actividad)
+    // =========================
+    setMessages((prev) => [
+      ...prev,
+      { role: "ai", text: `✔ Actividad seleccionada: ${opt}` },
+    ]);
+
+    await saveActivity(opt);
+
+    setTimeout(() => navigate("/actividades"), 1000);
+  };
+
+  // =========================
+  // UI
+  // =========================
+  return (
+    <div style={{ padding: 20, background: "#0b0f14", color: "white" }}>
+
+      <h2>🤍 EmpatIA User</h2>
+
+      <div style={{ marginBottom: 20 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ margin: "8px 0" }}>
+            {m.role === "ai" ? "🤖 " : "👤 "}
+            {m.text}
+
+            {m.options && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {m.options.map((opt, j) => (
+                  <button
+                    key={j}
+                    onClick={() => handleOption(opt)}
+                    style={{
+                      padding: 8,
+                      background: "#1f2937",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 8,
+                      marginTop: 5,
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button onClick={() => navigate("/actividades")}>
+        🎯 Ir a actividades
+      </button>
+
+    </div>
+  );
+}
