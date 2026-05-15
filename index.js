@@ -1,5 +1,5 @@
 // =========================
-// index.js
+// index.js COMPLETO
 // =========================
 
 import express from "express";
@@ -87,7 +87,6 @@ async function callGemini(message) {
     return {
       ok: r.ok,
       reply,
-      raw: data,
     };
   } catch (err) {
     return {
@@ -115,12 +114,7 @@ app.post("/chat", async (req, res) => {
 
   const result = await callGemini(message);
 
-  // =========================
-  // FALLBACK IA
-  // =========================
   if (!result.ok || !result.reply) {
-    console.log("❌ IA ERROR:", result.error);
-
     return res.json({
       reply:
         "🤍 Ahora mismo no puedo responder… ¿quieres hacer una actividad?",
@@ -131,7 +125,6 @@ app.post("/chat", async (req, res) => {
   return res.json({
     reply: result.reply,
     model: MODEL,
-    errorType: null,
   });
 });
 
@@ -156,7 +149,7 @@ app.get("/actividades", async (req, res) => {
   } catch (err) {
     console.log(err);
 
-    return res.status(500).json([]);
+    return res.json([]);
   }
 });
 
@@ -167,6 +160,7 @@ app.post("/registro-actividad", async (req, res) => {
   const {
     id_usuario,
     id_actividad,
+    nombre_actividad,
     puntaje_agrado,
     frecuencia_deseada,
     reaccion,
@@ -187,6 +181,7 @@ app.post("/registro-actividad", async (req, res) => {
           {
             id_usuario,
             id_actividad,
+            nombre_actividad,
             puntaje_agrado,
             frecuencia_deseada,
             reaccion,
@@ -198,11 +193,11 @@ app.post("/registro-actividad", async (req, res) => {
 
     const data = await r.json();
 
-    console.log("✅ ACTIVIDAD REGISTRADA:", data);
+    console.log("✅ REGISTRO:", data);
 
-    return res.json(data?.[0] || { ok: true });
+    return res.json(data?.[0] || {});
   } catch (err) {
-    console.log("❌ ERROR REGISTRO:", err);
+    console.log(err);
 
     return res.status(500).json({
       error: "DB_ERROR",
@@ -211,14 +206,14 @@ app.post("/registro-actividad", async (req, res) => {
 });
 
 // =========================
-// ACTIVIDADES DEL USUARIO
+// ACTIVIDADES USUARIO
 // =========================
 app.get("/mis-actividades/:id_usuario", async (req, res) => {
   const { id_usuario } = req.params;
 
   try {
     const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/registroactividad?select=*,actividad(*)&id_usuario=eq.${id_usuario}&order=fecha.desc`,
+      `${process.env.SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id_usuario}&order=fecha.desc`,
       {
         headers: {
           apikey: process.env.SUPABASE_KEY,
@@ -229,18 +224,18 @@ app.get("/mis-actividades/:id_usuario", async (req, res) => {
 
     const data = await r.json();
 
-    console.log("📌 MIS ACTIVIDADES:", data);
+    console.log("📌 ACTIVIDADES:", data);
 
     return res.json(data || []);
   } catch (err) {
-    console.log("❌ ERROR ACTIVIDADES:", err);
+    console.log(err);
 
-    return res.status(500).json([]);
+    return res.json([]);
   }
 });
 
 // =========================
-// START SERVER
+// START
 // =========================
 const PORT = process.env.PORT || 3001;
 
