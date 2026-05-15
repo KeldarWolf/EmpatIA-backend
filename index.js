@@ -27,7 +27,7 @@ app.get("/", (req, res) => {
 });
 
 // =========================
-// DETECTAR ERRORES IA
+// DETECTORES IA
 // =========================
 const detectQuotaError = (r, data) => {
   const msg = data?.error?.message?.toLowerCase?.() || "";
@@ -93,7 +93,18 @@ Eres EmpatIA:
     const isNetwork = !r.ok && !reply && !isQuota;
 
     // =========================
-    // ERROR: QUOTA
+    // DEBUG REAL (IMPORTANTE)
+    // =========================
+    console.log("=== GEMINI DEBUG ===");
+    console.log("STATUS:", r.status);
+    console.log("OK:", r.ok);
+    console.log("REPLY:", reply);
+    console.log("ERROR MSG:", msg);
+    console.log("FULL DATA:", JSON.stringify(data, null, 2));
+    console.log("====================");
+
+    // =========================
+    // ERROR: QUOTA / TOKEN
     // =========================
     if (isQuota) {
       return res.json({
@@ -140,7 +151,9 @@ Eres EmpatIA:
   }
 });
 
-// START SERVER
+// =========================
+// START
+// =========================
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
