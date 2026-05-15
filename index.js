@@ -31,11 +31,47 @@ app.get("/", (req, res) => {
 });
 
 // =========================
-// MODELOS (ORDEN DE PRIORIDAD)
+// CACHE DE MODELOS
 // =========================
-const MODEL_1 = "models/gemini-2.5-flash";
-const MODEL_2 = "models/gemini-2.0-flash";
-const MODEL_3 = "models/gemini-1.5-flash-latest";
+let cachedModels = [];
+let lastUpdate = 0;
+
+// =========================
+// OBTENER MODELOS REALES
+// =========================
+const fetchModels = async () => {
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
+  );
+
+  const data = await r.json();
+
+  const models = (data.models || [])
+    .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+    .map(m => m.name);
+
+  console.log("📦 MODELOS REALES:", models);
+
+  return models;
+};
+
+// =========================
+// REFRESH CACHE (cada 10 min)
+// =========================
+const refreshModels = async () => {
+  try {
+    cachedModels = await fetchModels();
+    lastUpdate = Date.now();
+  } catch (err) {
+    console.log("❌ ERROR MODELOS:", err.message);
+  }
+};
+
+// inicial
+refreshModels();
+
+// cada 10 min
+setInterval(refreshModels, 1000 * 60 * 10);
 
 // =========================
 // PROMPT EMPATIA
@@ -45,7 +81,6 @@ Eres EmpatIA.
 - Responde corto
 - Empático
 - Humano
-- Sin explicaciones largas
 `;
 
 // =========================
@@ -81,7 +116,7 @@ const callGemini = async (model, message) => {
 };
 
 // =========================
-// CHAT IA (FALLBACK LINEAL 3 PASOS)
+// CHAT IA (USANDO CACHE + AUTO SELECCIÓN)
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
@@ -96,64 +131,57 @@ app.post("/chat", async (req, res) => {
     });
   }
 
+  if (!cachedModels.length) {
+    return res.json({
+      reply: "🤍 Aún cargando modelos de IA...",
+      errorType: "NO_MODELS",
+    });
+  }
+
+  // 🔥 elegir modelo preferido (flash primero)
+  const preferredModel =
+    cachedModels.find(m => m.includes("flash")) || cachedModels[0];
+
+  console.log("🤖 MODELO SELECCIONADO:", preferredModel);
+
   // =========================
-  // 1️⃣ INTENTO 1
+  // INTENTO 1 (PREFERIDO)
   // =========================
   try {
-    console.log("🤖 PROBANDO MODEL 1:", MODEL_1);
+    const r1 = await callGemini(preferredModel, message);
 
-    const r1 = await callGemini(MODEL_1, message);
-
-    console.log("📡 STATUS 1:", r1.status);
+    console.log("📡 STATUS:", r1.status);
 
     if (r1.ok && r1.reply) {
       return res.json({
         reply: r1.reply,
-        modelUsed: MODEL_1,
+        modelUsed: preferredModel,
       });
     }
-  } catch (e) {
-    console.log("❌ ERROR MODEL 1");
+  } catch (err) {
+    console.log("❌ ERROR MODELO PREFERIDO");
   }
 
   // =========================
-  // 2️⃣ INTENTO 2
+  // FALLBACK 1 SOLO (NO LOOP INFINITO)
   // =========================
-  try {
-    console.log("🤖 PROBANDO MODEL 2:", MODEL_2);
+  for (const model of cachedModels) {
+    if (model === preferredModel) continue;
 
-    const r2 = await callGemini(MODEL_2, message);
+    try {
+      console.log("🤖 FALLBACK:", model);
 
-    console.log("📡 STATUS 2:", r2.status);
+      const r = await callGemini(model, message);
 
-    if (r2.ok && r2.reply) {
-      return res.json({
-        reply: r2.reply,
-        modelUsed: MODEL_2,
-      });
+      if (r.ok && r.reply) {
+        return res.json({
+          reply: r.reply,
+          modelUsed: model,
+        });
+      }
+    } catch (err) {
+      console.log("❌ ERROR FALLBACK:", model);
     }
-  } catch (e) {
-    console.log("❌ ERROR MODEL 2");
-  }
-
-  // =========================
-  // 3️⃣ INTENTO 3
-  // =========================
-  try {
-    console.log("🤖 PROBANDO MODEL 3:", MODEL_3);
-
-    const r3 = await callGemini(MODEL_3, message);
-
-    console.log("📡 STATUS 3:", r3.status);
-
-    if (r3.ok && r3.reply) {
-      return res.json({
-        reply: r3.reply,
-        modelUsed: MODEL_3,
-      });
-    }
-  } catch (e) {
-    console.log("❌ ERROR MODEL 3");
   }
 
   // =========================
