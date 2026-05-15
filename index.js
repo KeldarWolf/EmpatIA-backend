@@ -26,19 +26,24 @@ app.use((req, res, next) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
-// =========================
-// HOME
-// =========================
 app.get("/", (req, res) => {
   res.send("🚀 EmpatIA Backend activo 🤖");
 });
 
 // =========================
-// MODELOS (fallback seguro)
+// 10 MODELOS (FALLBACK REAL)
 // =========================
 const MODELS = [
   "models/gemini-1.5-flash-latest",
   "models/gemini-1.5-pro-latest",
+  "models/gemini-1.5-flash",
+  "models/gemini-1.5-pro",
+  "models/gemini-1.0-pro",
+  "models/gemini-pro",
+  "models/gemini-pro-vision",
+  "models/gemini-1.0-flash",
+  "models/gemini-1.5-flash-001",
+  "models/gemini-1.5-pro-001",
 ];
 
 // =========================
@@ -82,7 +87,7 @@ Usuario: ${message}
 };
 
 // =========================
-// CHAT IA
+// CHAT IA (AUTO DETECT 10 MODELOS)
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
@@ -105,9 +110,9 @@ app.post("/chat", async (req, res) => {
 
       console.log("📡 STATUS:", result.status);
 
+      // ✔ ÉXITO
       if (result.ok && result.reply) {
-        console.log("✅ MODELO USADO:", model);
-        console.log("💬 RESPUESTA:", result.reply);
+        console.log("✅ MODELO FUNCIONAL:", model);
 
         return res.json({
           reply: result.reply,
@@ -116,11 +121,26 @@ app.post("/chat", async (req, res) => {
         });
       }
 
+      // ❌ MODELO NO EXISTE (404)
+      if (result.status === 404) {
+        console.log("⚠️ MODELO NO DISPONIBLE:", model);
+        continue;
+      }
+
+      // ❌ QUOTA
+      if (result.status === 429) {
+        console.log("⚠️ QUOTA EN MODELO:", model);
+        continue;
+      }
+
     } catch (err) {
       console.log("❌ ERROR MODELO:", model, err.message);
     }
   }
 
+  // =========================
+  // FALLBACK FINAL HUMANO
+  // =========================
   return res.json({
     reply: "🤍 No pude responder ahora, pero sigo contigo.",
     errorType: "ALL_MODELS_FAILED",
