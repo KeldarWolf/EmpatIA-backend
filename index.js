@@ -40,8 +40,10 @@ app.get("/", (req, res) => {
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  if (!message) {
-    return res.status(400).json({ reply: "Mensaje vacío" });
+  if (!message || !message.trim()) {
+    return res.status(400).json({
+      reply: "¿Cómo te sientes hoy? 🤍",
+    });
   }
 
   try {
@@ -57,7 +59,13 @@ app.post("/chat", async (req, res) => {
             {
               parts: [
                 {
-                  text: message,
+                  text: `
+Eres EmpatIA:
+- Responde corto y humano
+- 1 o 2 frases máximo
+- Acompaña emocionalmente primero
+- Si el usuario está mal o no sabe qué hacer, sugiere suavemente una actividad
+                  `,
                 },
               ],
             },
@@ -66,17 +74,56 @@ app.post("/chat", async (req, res) => {
       }
     );
 
+    // =========================
+    // ERROR GEMINI
+    // =========================
+    if (!r.ok) {
+      const errText = await r.text();
+
+      console.error("❌ GEMINI ERROR:", errText);
+
+      // 🚨 SIN CUOTA / TOKENS
+      if (
+        r.status === 429 ||
+        errText.includes("quota") ||
+        errText.includes("RESOURCE_EXHAUSTED")
+      ) {
+        return res.json({
+          reply:
+            "🤍 Ahora mismo la IA no está disponible por falta de tokens o cuota.\n\n¿Quieres que te ayude con una actividad para sentirte mejor?",
+          activityMode: true,
+        });
+      }
+
+      // 🚨 MODELO O ERROR GENERAL
+      return res.json({
+        reply:
+          "🤍 La IA no está disponible en este momento.\n\n¿Quieres que hagamos una actividad juntos?",
+        activityMode: true,
+      });
+    }
+
     const data = await r.json();
 
     const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Te escucho 🤍 (IA sin respuesta)";
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!reply) {
+      return res.json({
+        reply:
+          "🤍 No pude generar respuesta ahora.\n\n¿Quieres hacer una actividad?",
+        activityMode: true,
+      });
+    }
 
     return res.json({ reply });
   } catch (error) {
     console.error("❌ CHAT ERROR:", error);
+
     return res.status(500).json({
-      reply: "Error conectando IA",
+      reply:
+        "🤍 Error de conexión con la IA.\n\n¿Quieres intentar una actividad para relajarte?",
+      activityMode: true,
     });
   }
 });
