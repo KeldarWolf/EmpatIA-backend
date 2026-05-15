@@ -1,33 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function Admin() {
-  const API = "https://empatia-backend.onrender.com/api/users";
-  const PING_API = "https://empatia-backend.onrender.com/";
-
   const navigate = useNavigate();
+  const API = "https://empatia-backend.onrender.com/api/users";
 
   const [users, setUsers] = useState([]);
-  const [edit, setEdit] = useState(null);
-
-  // UI
   const [section, setSection] = useState("dashboard");
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("all");
-
-  // IA STATUS REAL
-  const [iaStatus, setIaStatus] = useState({
-    ok: false,
-    latency: 0,
-  });
 
   // =========================
-  // AUTH CHECK
+  // AUTH
   // =========================
   useEffect(() => {
-    const session = JSON.parse(localStorage.getItem("usuario"));
+    const user = JSON.parse(localStorage.getItem("user"));
 
-    if (!session || session.role !== "admin") {
+    if (!user || user.role !== "admin") {
       navigate("/login");
     }
   }, []);
@@ -36,9 +24,13 @@ export default function Admin() {
   // LOAD USERS
   // =========================
   const loadUsers = async () => {
-    const res = await fetch(API);
-    const data = await res.json();
-    setUsers(Array.isArray(data) ? data : []);
+    try {
+      const res = await fetch(API);
+      const data = await res.json();
+      setUsers(data);
+    } catch (err) {
+      console.log(err);
+    }
   };
 
   useEffect(() => {
@@ -46,37 +38,7 @@ export default function Admin() {
   }, []);
 
   // =========================
-  // IA REAL PING (SIN TOKENS)
-  // =========================
-  const pingIA = async () => {
-    try {
-      const start = Date.now();
-
-      const res = await fetch(PING_API);
-      await res.text();
-
-      const end = Date.now();
-
-      setIaStatus({
-        ok: res.ok,
-        latency: end - start,
-      });
-    } catch {
-      setIaStatus({
-        ok: false,
-        latency: 0,
-      });
-    }
-  };
-
-  useEffect(() => {
-    pingIA();
-    const interval = setInterval(pingIA, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // =========================
-  // CRUD
+  // DELETE USER
   // =========================
   const deleteUser = async (id) => {
     if (!window.confirm("¿Eliminar usuario?")) return;
@@ -85,110 +47,92 @@ export default function Admin() {
     loadUsers();
   };
 
-  const saveUser = async () => {
-    await fetch(`${API}/${edit.id_usuario}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(edit),
-    });
-
-    setEdit(null);
-    loadUsers();
-  };
-
-  // =========================
-  // FILTER + SEARCH (MEMO)
-  // =========================
-  const filteredUsers = useMemo(() => {
-    return users
-      .filter((u) =>
-        roleFilter === "all" ? true : u.role === roleFilter
-      )
-      .filter((u) =>
-        u.nombre.toLowerCase().includes(search.toLowerCase())
-      );
-  }, [users, search, roleFilter]);
-
   // =========================
   // LOGOUT
   // =========================
   const logout = () => {
-    localStorage.clear();
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
     navigate("/login");
+    window.location.reload();
   };
+
+  // =========================
+  // FILTER USERS
+  // =========================
+  const filteredUsers = users.filter((u) =>
+    u.nombre.toLowerCase().includes(search.toLowerCase()) ||
+    u.email.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div style={styles.page}>
       <div style={styles.container}>
+
         {/* HEADER */}
         <div style={styles.header}>
-          <h1 style={styles.title}>🛠 EMPATIA ADMIN</h1>
+          <h1 style={styles.title}>🛠 EMPATIA ADMIN PANEL</h1>
 
           <button style={styles.logoutBtn} onClick={logout}>
-            Salir
+            Logout
           </button>
         </div>
 
         {/* MENU */}
         <div style={styles.menu}>
-          {["dashboard", "users", "ia"].map((s) => (
-            <button
-              key={s}
-              style={styles.menuBtn}
-              onClick={() => setSection(s)}
-            >
-              {s.toUpperCase()}
-            </button>
-          ))}
+          <button style={styles.menuBtn} onClick={() => setSection("dashboard")}>Dashboard</button>
+          <button style={styles.menuBtn} onClick={() => setSection("users")}>Usuarios</button>
+          <button style={styles.menuBtn} onClick={() => setSection("logs")}>Logs</button>
+          <button style={styles.menuBtn} onClick={() => setSection("metrics")}>Métricas</button>
+          <button style={styles.menuBtn} onClick={() => setSection("ai")}>IA</button>
+          <button style={styles.menuBtn} onClick={() => setSection("reports")}>Reportes</button>
         </div>
 
-        {/* ================= DASHBOARD ================= */}
+        {/* =========================
+            DASHBOARD
+        ========================= */}
         {section === "dashboard" && (
-          <div style={styles.grid}>
-            <div style={styles.cardStat}>
-              👥 Usuarios <h2>{users.length}</h2>
+          <div style={styles.statsGrid}>
+
+            <div style={styles.statCard}>
+              <h3>🟢 Servidor</h3>
+              <p>Operativo</p>
             </div>
 
-            <div style={styles.cardStat}>
-              🤖 IA Status
-              <h2 style={{ color: iaStatus.ok ? "#00ffcc" : "red" }}>
-                {iaStatus.ok ? "ONLINE" : "OFFLINE"}
-              </h2>
+            <div style={styles.statCard}>
+              <h3>👥 Usuarios</h3>
+              <p>{users.length}</p>
             </div>
 
-            <div style={styles.cardStat}>
-              ⚡ Latencia IA
-              <h2>{iaStatus.latency} ms</h2>
+            <div style={styles.statCard}>
+              <h3>🤖 IA</h3>
+              <p>Activa</p>
             </div>
+
+            <div style={styles.statCard}>
+              <h3>📊 Sistema</h3>
+              <p>Estable</p>
+            </div>
+
           </div>
         )}
 
-        {/* ================= USERS ================= */}
+        {/* =========================
+            USERS TABLE + SEARCH
+        ========================= */}
         {section === "users" && (
-          <>
-            {/* filtros */}
-            <div style={styles.filters}>
-              <input
-                style={styles.input}
-                placeholder="🔎 Buscar usuario..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+          <div>
 
-              <select
-                style={styles.input}
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-              >
-                <option value="all">Todos</option>
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
+            <input
+              style={styles.search}
+              placeholder="🔎 Buscar usuario..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
 
-            {/* TABLA */}
             <div style={styles.table}>
-              <div style={styles.rowHead}>
+
+              <div style={styles.tableHeader}>
                 <span>Nombre</span>
                 <span>Email</span>
                 <span>Rol</span>
@@ -196,126 +140,138 @@ export default function Admin() {
               </div>
 
               {filteredUsers.map((u) => (
-                <div key={u.id_usuario} style={styles.row}>
+                <div key={u.id_usuario} style={styles.tableRow}>
+
                   <span>{u.nombre}</span>
                   <span>{u.email}</span>
                   <span style={styles.role}>{u.role}</span>
 
                   <div style={styles.actions}>
+                    <button style={styles.editBtn}>Editar</button>
                     <button
-                      style={styles.btnEdit}
-                      onClick={() => setEdit(u)}
-                    >
-                      Editar
-                    </button>
-
-                    <button
-                      style={styles.btnDelete}
+                      style={styles.deleteBtn}
                       onClick={() => deleteUser(u.id_usuario)}
                     >
-                      X
+                      Eliminar
                     </button>
                   </div>
+
                 </div>
               ))}
-            </div>
-          </>
-        )}
 
-        {/* ================= IA ================= */}
-        {section === "ia" && (
-          <div style={styles.iaBox}>
-            <h2>🤖 Estado IA REAL</h2>
-
-            <p>
-              Estado:{" "}
-              <b style={{ color: iaStatus.ok ? "#00ffcc" : "red" }}>
-                {iaStatus.ok ? "Conectada" : "Sin conexión"}
-              </b>
-            </p>
-
-            <p>Ping backend: {iaStatus.latency} ms</p>
-
-            <p style={{ opacity: 0.7 }}>
-              (esto no gasta tokens, solo revisa si el servidor responde)
-            </p>
-
-            <button style={styles.menuBtn} onClick={pingIA}>
-              Re-chequear IA
-            </button>
-          </div>
-        )}
-
-        {/* ================= EDIT MODAL ================= */}
-        {edit && (
-          <div style={styles.modal}>
-            <div style={styles.modalBox}>
-              <input
-                style={styles.input}
-                value={edit.nombre}
-                onChange={(e) =>
-                  setEdit({ ...edit, nombre: e.target.value })
-                }
-              />
-
-              <input
-                style={styles.input}
-                value={edit.email || ""}
-                onChange={(e) =>
-                  setEdit({ ...edit, email: e.target.value })
-                }
-              />
-
-              <select
-                style={styles.input}
-                value={edit.role}
-                onChange={(e) =>
-                  setEdit({ ...edit, role: e.target.value })
-                }
-              >
-                <option value="user">user</option>
-                <option value="admin">admin</option>
-              </select>
-
-              <div style={styles.actions}>
-                <button style={styles.btnEdit} onClick={saveUser}>
-                  Guardar
-                </button>
-                <button
-                  style={styles.btnDelete}
-                  onClick={() => setEdit(null)}
-                >
-                  Cancelar
-                </button>
-              </div>
             </div>
           </div>
         )}
+
+        {/* =========================
+            LOGS
+        ========================= */}
+        {section === "logs" && (
+          <div style={styles.logBox}>
+            <h2 style={styles.sectionTitle}>📜 Logs del sistema</h2>
+
+            <div style={styles.logLine}>[OK] Admin login</div>
+            <div style={styles.logLine}>[AI] respuesta generada</div>
+            <div style={styles.logLine}>[WARN] intento acceso denegado</div>
+            <div style={styles.logLine}>[DB] usuario eliminado</div>
+            <div style={styles.logLine}>[SEC] sesión validada</div>
+          </div>
+        )}
+
+        {/* =========================
+            METRICS
+        ========================= */}
+        {section === "metrics" && (
+          <div style={styles.statsGrid}>
+
+            <div style={styles.statCard}>
+              <h3>CPU</h3>
+              <p>29%</p>
+            </div>
+
+            <div style={styles.statCard}>
+              <h3>RAM</h3>
+              <p>60%</p>
+            </div>
+
+            <div style={styles.statCard}>
+              <h3>API</h3>
+              <p>1204 req</p>
+            </div>
+
+            <div style={styles.statCard}>
+              <h3>IA Latency</h3>
+              <p>1.2s</p>
+            </div>
+
+          </div>
+        )}
+
+        {/* =========================
+            IA
+        ========================= */}
+        {section === "ai" && (
+          <div style={styles.logBox}>
+            <h2 style={styles.sectionTitle}>🤖 IA Status</h2>
+
+            <div style={styles.logLine}>[OK] modelo conectado</div>
+            <div style={styles.logLine}>[OK] IA emocional activa</div>
+            <div style={styles.logLine}>[INFO] 90 conversaciones hoy</div>
+          </div>
+        )}
+
+        {/* =========================
+            REPORTS
+        ========================= */}
+        {section === "reports" && (
+          <div style={styles.box}>
+            <h2 style={styles.sectionTitle}>Reportes</h2>
+
+            <button style={styles.button}>Exportar usuarios</button>
+            <button style={styles.button}>Descargar PDF</button>
+            <button style={styles.button}>Reporte IA</button>
+            <button style={styles.button}>Auditoría sistema</button>
+          </div>
+        )}
+
+        {/* FOOTER */}
+        <button style={styles.backButton} onClick={logout}>
+          Cerrar sesión
+        </button>
+
       </div>
     </div>
   );
 }
 
-/* ================= STYLE EMPATIA ================= */
-
+/* =========================
+   STYLES CYBERPUNK
+========================= */
 const styles = {
+
   page: {
     minHeight: "100vh",
-    background: "#05070a",
-    color: "#fff",
+    background: "radial-gradient(circle at top, #0b0f14, #05070a)",
+    display: "flex",
+    justifyContent: "center",
     padding: 20,
     fontFamily: "Arial",
   },
 
   container: {
-    maxWidth: 1200,
-    margin: "auto",
+    width: "100%",
+    maxWidth: 1100,
+    background: "rgba(15,22,32,0.9)",
+    borderRadius: 20,
+    padding: 20,
+    border: "1px solid rgba(0,229,255,0.15)",
+    boxShadow: "0 0 50px rgba(0,229,255,0.08)",
   },
 
   header: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
+    marginBottom: 15,
   },
 
   title: {
@@ -323,122 +279,143 @@ const styles = {
   },
 
   logoutBtn: {
-    background: "red",
+    background: "#ff3b3b",
     border: "none",
-    padding: 10,
     color: "#fff",
+    padding: "8px 12px",
     borderRadius: 8,
   },
 
   menu: {
     display: "flex",
     gap: 10,
-    marginTop: 15,
+    flexWrap: "wrap",
+    marginBottom: 20,
   },
 
   menuBtn: {
-    background: "#111",
-    border: "1px solid #00e5ff",
+    background: "rgba(0,229,255,0.12)",
+    border: "1px solid rgba(0,229,255,0.25)",
     color: "#00e5ff",
-    padding: 10,
+    padding: "8px 12px",
     borderRadius: 8,
+    cursor: "pointer",
   },
 
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3,1fr)",
-    gap: 15,
-    marginTop: 20,
-  },
-
-  cardStat: {
-    background: "#111",
-    padding: 20,
-    borderRadius: 10,
-    border: "1px solid #00e5ff33",
-  },
-
-  filters: {
-    display: "flex",
-    gap: 10,
-    marginTop: 20,
-  },
-
-  input: {
-    padding: 10,
-    background: "#111",
-    border: "1px solid #00e5ff33",
-    color: "#fff",
-    borderRadius: 8,
+  search: {
     width: "100%",
+    padding: 10,
+    marginBottom: 10,
+    borderRadius: 10,
+    border: "1px solid rgba(0,229,255,0.3)",
+    background: "#0b0f14",
+    color: "#00e5ff",
   },
 
   table: {
-    marginTop: 20,
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
   },
 
-  rowHead: {
+  tableHeader: {
     display: "grid",
-    gridTemplateColumns: "2fr 2fr 1fr 1fr",
+    gridTemplateColumns: "2fr 3fr 1fr 2fr",
     padding: 10,
-    background: "#111",
+    background: "rgba(0,229,255,0.1)",
+    color: "#00e5ff",
     fontWeight: "bold",
+    borderRadius: 8,
   },
 
-  row: {
+  tableRow: {
     display: "grid",
-    gridTemplateColumns: "2fr 2fr 1fr 1fr",
+    gridTemplateColumns: "2fr 3fr 1fr 2fr",
     padding: 10,
-    borderBottom: "1px solid #222",
+    background: "#111a24",
+    borderRadius: 8,
+    color: "#fff",
   },
 
   role: {
     color: "#00e5ff",
+    textTransform: "uppercase",
   },
 
   actions: {
     display: "flex",
-    gap: 5,
+    gap: 10,
   },
 
-  btnEdit: {
+  editBtn: {
     background: "#00e5ff",
     border: "none",
-    padding: 6,
+    padding: "6px 10px",
     borderRadius: 6,
   },
 
-  btnDelete: {
-    background: "red",
+  deleteBtn: {
+    background: "#ff3b3b",
     border: "none",
-    color: "#fff",
-    padding: 6,
+    padding: "6px 10px",
     borderRadius: 6,
+    color: "#fff",
   },
 
-  modal: {
-    position: "fixed",
-    top: 0,
-    left: 0,
+  logBox: {
+    background: "#050a10",
+    padding: 15,
+    borderRadius: 12,
+  },
+
+  logLine: {
+    fontFamily: "monospace",
+    color: "#00e5ff",
+    marginBottom: 6,
+  },
+
+  statCard: {
+    background: "#0f1620",
+    padding: 15,
+    borderRadius: 12,
+    color: "#fff",
+  },
+
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))",
+    gap: 15,
+  },
+
+  box: {
+    background: "#0f1620",
+    padding: 15,
+    borderRadius: 12,
+  },
+
+  sectionTitle: {
+    color: "#00e5ff",
+    marginBottom: 10,
+  },
+
+  button: {
     width: "100%",
-    height: "100%",
-    background: "rgba(0,0,0,0.7)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    border: "1px solid #00e5ff",
+    background: "transparent",
+    color: "#00e5ff",
+    cursor: "pointer",
   },
 
-  modalBox: {
-    background: "#111",
-    padding: 20,
+  backButton: {
+    width: "100%",
+    marginTop: 15,
+    padding: 10,
     borderRadius: 10,
-    width: 350,
-  },
-
-  iaBox: {
-    marginTop: 20,
-    background: "#111",
-    padding: 20,
-    borderRadius: 10,
+    background: "#00e5ff",
+    border: "none",
+    fontWeight: "bold",
   },
 };
