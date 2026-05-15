@@ -14,7 +14,7 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // =========================
-// LOG (NO TOCAR)
+// LOG
 // =========================
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
@@ -22,7 +22,7 @@ app.use((req, res, next) => {
 });
 
 // =========================
-// ROUTES BASE
+// ROUTES
 // =========================
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
@@ -48,7 +48,7 @@ Si no puedes ayudar, sugieres una actividad suave.
 `;
 
 // =========================
-// IA CALL
+// IA
 // =========================
 async function callGemini(message) {
   try {
@@ -90,12 +90,10 @@ async function callGemini(message) {
 }
 
 // =========================
-// CHAT IA
+// CHAT
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
-
-  console.log("🔥 CHAT:", message);
 
   if (!message?.trim()) {
     return res.json({
@@ -121,7 +119,7 @@ app.post("/chat", async (req, res) => {
 });
 
 // =========================
-// SUPABASE ACTIVIDADES
+// OBTENER CATÁLOGO ACTIVIDADES
 // =========================
 app.get("/actividades", async (req, res) => {
   try {
@@ -136,26 +134,66 @@ app.get("/actividades", async (req, res) => {
     );
 
     const data = await r.json();
-    return res.json(data || []);
-  } catch (err) {
-    return res.json([]);
+
+    res.json(data || []);
+  } catch {
+    res.json([]);
   }
 });
 
 // =========================
-// REGISTRAR ACTIVIDAD USUARIO
+// GUARDAR ACTIVIDAD USUARIO
 // =========================
-app.post("/registro-actividad", async (req, res) => {
-  const {
-    id_usuario,
-    id_actividad,
-    puntaje_agrado,
-    frecuencia_deseada,
-    reaccion,
-  } = req.body;
+app.post("/guardar-actividad-usuario", async (req, res) => {
+  const { id_usuario, texto } = req.body;
 
   try {
-    const r = await fetch(
+    // BUSCAR ACTIVIDAD
+    let r = await fetch(
+      `${process.env.SUPABASE_URL}/rest/v1/actividad?nombre=eq.${encodeURIComponent(
+        texto
+      )}&select=*`,
+      {
+        headers: {
+          apikey: process.env.SUPABASE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
+        },
+      }
+    );
+
+    let actividad = await r.json();
+
+    let idActividad = actividad?.[0]?.id_actividad;
+
+    // CREAR SI NO EXISTE
+    if (!idActividad) {
+      const create = await fetch(
+        `${process.env.SUPABASE_URL}/rest/v1/actividad`,
+        {
+          method: "POST",
+          headers: {
+            apikey: process.env.SUPABASE_KEY,
+            Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+            Prefer: "return=representation",
+          },
+          body: JSON.stringify([
+            {
+              nombre: texto,
+              descripcion: texto,
+              categoria: "personalizada",
+            },
+          ]),
+        }
+      );
+
+      const nuevaActividad = await create.json();
+
+      idActividad = nuevaActividad?.[0]?.id_actividad;
+    }
+
+    // REGISTRAR AL USUARIO
+    const save = await fetch(
       `${process.env.SUPABASE_URL}/rest/v1/registroactividad`,
       {
         method: "POST",
@@ -168,21 +206,50 @@ app.post("/registro-actividad", async (req, res) => {
         body: JSON.stringify([
           {
             id_usuario,
-            id_actividad,
-            puntaje_agrado,
-            frecuencia_deseada,
-            reaccion,
+            id_actividad: idActividad,
             fecha: new Date().toISOString(),
+            puntaje_agrado: 5,
+            frecuencia_deseada: "media",
+            reaccion: "guardada",
           },
         ]),
       }
     );
 
+    const data = await save.json();
+
+    res.json(data?.[0] || { ok: true });
+  } catch (err) {
+    console.log(err);
+
+    res.status(500).json({
+      error: "Error guardando actividad",
+    });
+  }
+});
+
+// =========================
+// ACTIVIDADES DEL USUARIO
+// =========================
+app.get("/actividades-usuario/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const r = await fetch(
+      `${process.env.SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id}&select=*,actividad(*)`,
+      {
+        headers: {
+          apikey: process.env.SUPABASE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
+        },
+      }
+    );
+
     const data = await r.json();
 
-    return res.json(data?.[0] || { ok: true });
-  } catch (err) {
-    return res.status(500).json({ error: "DB ERROR" });
+    res.json(data || []);
+  } catch {
+    res.json([]);
   }
 });
 
