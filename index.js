@@ -13,7 +13,7 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // =========================
-// LOG GLOBAL
+// LOG
 // =========================
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
@@ -31,24 +31,22 @@ app.get("/", (req, res) => {
 });
 
 // =========================
-// OBTENER MODELOS REALES
+// MODELOS (ORDEN DE PRIORIDAD)
 // =========================
-const getModels = async () => {
-  try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
-    );
+const MODEL_1 = "models/gemini-2.5-flash";
+const MODEL_2 = "models/gemini-2.0-flash";
+const MODEL_3 = "models/gemini-1.5-flash-latest";
 
-    const data = await r.json();
-
-    console.log("📦 MODELOS DISPONIBLES:", JSON.stringify(data, null, 2));
-
-    return data?.models?.map((m) => m.name) || [];
-  } catch (err) {
-    console.log("❌ ERROR LISTANDO MODELOS:", err.message);
-    return [];
-  }
-};
+// =========================
+// PROMPT EMPATIA
+// =========================
+const SYSTEM_PROMPT = `
+Eres EmpatIA.
+- Responde corto
+- Empático
+- Humano
+- Sin explicaciones largas
+`;
 
 // =========================
 // GEMINI CALL
@@ -64,14 +62,7 @@ const callGemini = async (model, message) => {
           {
             parts: [
               {
-                text: `
-Eres EmpatIA:
-- Responde corto
-- Empático
-- Humano
-
-Usuario: ${message}
-                `,
+                text: `${SYSTEM_PROMPT}\n\nUsuario: ${message}`,
               },
             ],
           },
@@ -86,12 +77,11 @@ Usuario: ${message}
     ok: r.ok,
     status: r.status,
     reply: data?.candidates?.[0]?.content?.parts?.[0]?.text,
-    data,
   };
 };
 
 // =========================
-// CHAT IA (DINÁMICO REAL)
+// CHAT IA (FALLBACK LINEAL 3 PASOS)
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
@@ -106,49 +96,77 @@ app.post("/chat", async (req, res) => {
     });
   }
 
-  const models = await getModels();
+  // =========================
+  // 1️⃣ INTENTO 1
+  // =========================
+  try {
+    console.log("🤖 PROBANDO MODEL 1:", MODEL_1);
 
-  if (!models.length) {
-    return res.json({
-      reply: "🤍 No se pudieron cargar modelos de IA.",
-      errorType: "NO_MODELS",
-    });
-  }
+    const r1 = await callGemini(MODEL_1, message);
 
-  console.log("🤖 MODELOS A USAR:", models);
+    console.log("📡 STATUS 1:", r1.status);
 
-  for (const model of models) {
-    try {
-      console.log("⚡ Probando:", model);
-
-      const result = await callGemini(model, message);
-
-      console.log("📡 STATUS:", result.status);
-
-      if (result.ok && result.reply) {
-        console.log("✅ MODELO FUNCIONAL:", model);
-        console.log("💬 RESPUESTA:", result.reply);
-
-        return res.json({
-          reply: result.reply,
-          errorType: null,
-          modelUsed: model,
-        });
-      }
-
-    } catch (err) {
-      console.log("❌ ERROR MODELO:", model, err.message);
+    if (r1.ok && r1.reply) {
+      return res.json({
+        reply: r1.reply,
+        modelUsed: MODEL_1,
+      });
     }
+  } catch (e) {
+    console.log("❌ ERROR MODEL 1");
   }
 
+  // =========================
+  // 2️⃣ INTENTO 2
+  // =========================
+  try {
+    console.log("🤖 PROBANDO MODEL 2:", MODEL_2);
+
+    const r2 = await callGemini(MODEL_2, message);
+
+    console.log("📡 STATUS 2:", r2.status);
+
+    if (r2.ok && r2.reply) {
+      return res.json({
+        reply: r2.reply,
+        modelUsed: MODEL_2,
+      });
+    }
+  } catch (e) {
+    console.log("❌ ERROR MODEL 2");
+  }
+
+  // =========================
+  // 3️⃣ INTENTO 3
+  // =========================
+  try {
+    console.log("🤖 PROBANDO MODEL 3:", MODEL_3);
+
+    const r3 = await callGemini(MODEL_3, message);
+
+    console.log("📡 STATUS 3:", r3.status);
+
+    if (r3.ok && r3.reply) {
+      return res.json({
+        reply: r3.reply,
+        modelUsed: MODEL_3,
+      });
+    }
+  } catch (e) {
+    console.log("❌ ERROR MODEL 3");
+  }
+
+  // =========================
+  // FALLBACK FINAL
+  // =========================
   return res.json({
-    reply: "🤍 No pude responder ahora, pero sigo contigo.",
+    reply: "🤍 Lo siento... sigo aquí contigo.",
     errorType: "ALL_MODELS_FAILED",
   });
 });
 
 // =========================
-// START SERVER
+// START
 // =========================
 const PORT = process.env.PORT || 3001;
 
