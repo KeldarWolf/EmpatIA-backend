@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import fetch from "node-fetch";
 
 import authRoutes from "./routers/authRoutes.js";
 import usersRoutes from "./routers/usersRoutes.js";
@@ -10,12 +9,12 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors({ origin: "*" }));
+// =========================
+// MIDDLEWARE
+// =========================
+app.use(cors());
 app.use(express.json());
 
-// =========================
-// LOG
-// =========================
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
   next();
@@ -28,158 +27,103 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
 // =========================
-// SUPABASE CONFIG FIX
+// HOME
 // =========================
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
+app.get("/", (req, res) => {
+  res.send("🚀 EmpatIA Backend activo");
+});
 
 // =========================
 // CHAT IA
 // =========================
-const MODEL = "models/gemini-2.5-flash";
-const API_KEY = process.env.GEMINI_API_KEY;
+app.post("/chat", async (req, res) => {
+  const { message } = req.body;
 
-const SYSTEM_PROMPT = `
-Eres EmpatIA.
-Respondes corto, empático y humano.
-`;
+  if (!message || !message.trim()) {
+    return res.json({
+      reply: "🤍 Cuéntame cómo te sientes.",
+    });
+  }
 
-async function callGemini(message) {
   try {
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           contents: [
             {
-              parts: [{ text: `${SYSTEM_PROMPT}\nUsuario: ${message}` }],
+              parts: [
+                {
+                  text: `
+Eres EmpatIA:
+- Responde corto (1-2 frases)
+- Acompaña emocionalmente primero
+- Sé humano y cercano
+- Si el usuario está mal o confundido, ofrece ayuda suave
+                  `,
+                },
+              ],
             },
           ],
         }),
       }
     );
 
+    // =========================
+    // ERROR IA
+    // =========================
+    if (!r.ok) {
+      const err = await r.text();
+
+      console.error("❌ GEMINI ERROR:", err);
+
+      // 🚨 SIN CUOTA / TOKEN
+      if (
+        r.status === 429 ||
+        err.includes("quota") ||
+        err.includes("RESOURCE_EXHAUSTED")
+      ) {
+        return res.json({
+          reply:
+            "🤍 Ahora mismo la IA no está disponible.\n\n¿Quieres que te ayude con una actividad para sentirte mejor?",
+          activityMode: true,
+        });
+      }
+
+      // 🚨 OTRO ERROR
+      return res.json({
+        reply:
+          "🤍 La IA no está disponible en este momento.\n\n¿Quieres hacer una actividad?",
+        activityMode: true,
+      });
+    }
+
     const data = await r.json();
 
-    return {
-      ok: true,
-      reply: data?.candidates?.[0]?.content?.parts?.[0]?.text,
-    };
-  } catch (e) {
-    return { ok: false };
-  }
-}
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-// =========================
-// CHAT
-// =========================
-app.post("/chat", async (req, res) => {
-  const { message } = req.body;
+    if (!reply) {
+      return res.json({
+        reply:
+          "🤍 No pude responder ahora.\n\n¿Quieres hacer una actividad?",
+        activityMode: true,
+      });
+    }
 
-  const result = await callGemini(message);
+    return res.json({ reply });
+  } catch (error) {
+    console.error("❌ SERVER ERROR:", error);
 
-  if (!result.ok) {
     return res.json({
-      reply: "🤍 No puedo responder ahora",
+      reply:
+        "🤍 Error de conexión.\n\n¿Quieres intentar una actividad para relajarte?",
+      activityMode: true,
     });
-  }
-
-  res.json({ reply: result.reply });
-});
-
-// =========================
-// GUARDAR ACTIVIDAD
-// =========================
-app.post("/registro-actividad", async (req, res) => {
-  const {
-    id_usuario,
-    nombre_actividad,
-    puntaje_agrado,
-    frecuencia_deseada,
-    reaccion,
-  } = req.body;
-
-  try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/registroactividad`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify([
-        {
-          id_usuario,
-          nombre_actividad,
-          puntaje_agrado,
-          frecuencia_deseada,
-          reaccion,
-        },
-      ]),
-    });
-
-    const data = await r.json();
-    res.json(data?.[0] || { ok: true });
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ error: "DB ERROR" });
-  }
-});
-
-// =========================
-// OBTENER ACTIVIDADES POR USUARIO
-// =========================
-app.get("/mis-actividades/:id", async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id}&select=*`,
-      {
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-        },
-      }
-    );
-
-    const data = await r.json();
-    res.json(data || []);
-  } catch (err) {
-    res.json([]);
-  }
-});
-
-// =========================
-// UPDATE GUSTO
-// =========================
-app.patch("/registro-actividad/:id", async (req, res) => {
-  const { id } = req.params;
-  const { puntaje_agrado } = req.body;
-
-  try {
-    const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/registroactividad?id_registro=eq.${id}`,
-      {
-        method: "PATCH",
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          puntaje_agrado,
-        }),
-      }
-    );
-
-    const data = await r.json();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: "UPDATE ERROR" });
   }
 });
 
