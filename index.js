@@ -1,55 +1,8 @@
-// ============================================
-// src/index.js
-// ============================================
-
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-
-import authRoutes from "./routers/authRoutes.js";
-import usersRoutes from "./routers/usersRoutes.js";
-
-dotenv.config();
-
-const app = express();
-
-// =====================================
-// CONFIG
-// =====================================
-app.use(cors({ origin: "*" }));
-app.use(express.json());
-
-// =====================================
-// LOGS
-// =====================================
-app.use((req, res, next) => {
-  console.log("➡️", req.method, req.url);
-  next();
-});
-
-// =====================================
-// ROUTES
-// =====================================
-app.use("/api/auth", authRoutes);
-app.use("/api/users", usersRoutes);
-
-// =====================================
-// HOME
-// =====================================
-app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA Backend activo");
-});
-
-// =====================================
-// GEMINI
-// =====================================
-const MODEL = "models/gemini-2.5-flash";
-const API_KEY = process.env.GEMINI_API_KEY;
-
 // =====================================
 // CHAT IA
 // =====================================
 app.post("/chat", async (req, res) => {
+
   const { message } = req.body;
 
   console.log("📩 MESSAGE:", message);
@@ -58,6 +11,7 @@ app.post("/chat", async (req, res) => {
   // VALIDACIÓN
   // =====================================
   if (!message?.trim()) {
+
     return res.json({
       ok: true,
       reply: "🤍 Cuéntame cómo te sientes.",
@@ -65,6 +19,27 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
+
+    // =====================================
+    // PROMPT IA
+    // =====================================
+    const prompt = `
+Eres EmpatIA.
+
+Hablas como apoyo emocional.
+Responde corto, humano y empático.
+Usa respuestas breves.
+Nunca expliques palabras como diccionario.
+
+Si el usuario dice cosas como:
+"mal", "triste", "vacío", "solo",
+interpreta emoción y no significado.
+
+Si detectas malestar:
+invita actividades saludables.
+
+Usuario: ${message}
+`;
 
     // =====================================
     // REQUEST IA
@@ -83,7 +58,7 @@ app.post("/chat", async (req, res) => {
             {
               parts: [
                 {
-                  text: message,
+                  text: prompt,
                 },
               ],
             },
@@ -151,13 +126,4 @@ app.post("/chat", async (req, res) => {
       options: ["Sí", "No"],
     });
   }
-});
-
-// =====================================
-// START
-// =====================================
-const PORT = process.env.PORT || 3001;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Backend en puerto ${PORT}`);
 });
