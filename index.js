@@ -28,14 +28,13 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
 // =========================
-// HEALTH
+// SUPABASE CONFIG FIX
 // =========================
-app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA Backend activo 🤍");
-});
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
 // =========================
-// IA
+// CHAT IA
 // =========================
 const MODEL = "models/gemini-2.5-flash";
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -43,7 +42,6 @@ const API_KEY = process.env.GEMINI_API_KEY;
 const SYSTEM_PROMPT = `
 Eres EmpatIA.
 Respondes corto, empático y humano.
-Si no puedes responder, sugieres una actividad.
 `;
 
 async function callGemini(message) {
@@ -56,11 +54,7 @@ async function callGemini(message) {
         body: JSON.stringify({
           contents: [
             {
-              parts: [
-                {
-                  text: `${SYSTEM_PROMPT}\nUsuario: ${message}`,
-                },
-              ],
+              parts: [{ text: `${SYSTEM_PROMPT}\nUsuario: ${message}` }],
             },
           ],
         }),
@@ -69,11 +63,11 @@ async function callGemini(message) {
 
     const data = await r.json();
 
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    return { ok: r.ok, reply };
-  } catch (err) {
+    return {
+      ok: true,
+      reply: data?.candidates?.[0]?.content?.parts?.[0]?.text,
+    };
+  } catch (e) {
     return { ok: false };
   }
 }
@@ -86,11 +80,9 @@ app.post("/chat", async (req, res) => {
 
   const result = await callGemini(message);
 
-  if (!result.ok || !result.reply) {
+  if (!result.ok) {
     return res.json({
-      reply:
-        "🤍 Ahora no puedo responder… ¿quieres hacer una actividad?",
-      errorType: "IA_ERROR",
+      reply: "🤍 No puedo responder ahora",
     });
   }
 
@@ -98,68 +90,96 @@ app.post("/chat", async (req, res) => {
 });
 
 // =========================
-// 📌 ACTIVIDADES (TU BD REAL)
-// =========================
-app.get("/actividades", async (req, res) => {
-  try {
-    const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/Actividad?select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
-    );
-
-    const data = await r.json();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json([]);
-  }
-});
-
-// =========================
-// 📌 REGISTRO ACTIVIDAD (TU BD REAL)
+// GUARDAR ACTIVIDAD
 // =========================
 app.post("/registro-actividad", async (req, res) => {
   const {
     id_usuario,
-    id_actividad,
+    nombre_actividad,
     puntaje_agrado,
     frecuencia_deseada,
     reaccion,
   } = req.body;
 
   try {
-    const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/RegistroActividad`,
-      {
-        method: "POST",
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/registroactividad`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify([
+        {
+          id_usuario,
+          nombre_actividad,
+          puntaje_agrado,
+          frecuencia_deseada,
+          reaccion,
         },
-        body: JSON.stringify([
-          {
-            id_usuario,
-            id_actividad,
-            puntaje_agrado,
-            frecuencia_deseada,
-            reaccion,
-            fecha: new Date().toISOString(),
-          },
-        ]),
+      ]),
+    });
+
+    const data = await r.json();
+    res.json(data?.[0] || { ok: true });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "DB ERROR" });
+  }
+});
+
+// =========================
+// OBTENER ACTIVIDADES POR USUARIO
+// =========================
+app.get("/mis-actividades/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id}&select=*`,
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
       }
     );
 
     const data = await r.json();
-
-    res.json(data?.[0] || { ok: true });
+    res.json(data || []);
   } catch (err) {
-    res.status(500).json({ error: "DB ERROR" });
+    res.json([]);
+  }
+});
+
+// =========================
+// UPDATE GUSTO
+// =========================
+app.patch("/registro-actividad/:id", async (req, res) => {
+  const { id } = req.params;
+  const { puntaje_agrado } = req.body;
+
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/registroactividad?id_registro=eq.${id}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          puntaje_agrado,
+        }),
+      }
+    );
+
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: "UPDATE ERROR" });
   }
 });
 
