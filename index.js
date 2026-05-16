@@ -1,135 +1,298 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+// =========================
+// INDEX.JS COMPLETO MOD
+// =========================
 
-// AUTH
-import Login from "./pages/Login/Login";
-import Register from "./pages/Register";
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import fetch from "node-fetch";
 
-// DASHBOARD
-import User from "./pages/User/User";
-import Admin from "./pages/Admin";
+import pool from "./config/db.js";
 
-// MODULES
-import Rutina from "./pages/Rutina";
-import Actividades from "./pages/User/Actividades/Actividades";
-import Estadisticas from "./pages/User/Estadisticas/Estadisticas";
-import Motivacion from "./pages/Motivacion";
-import Diario from "./pages/Diario";
-import Gustos from "./pages/Gustos";
-import Configuracion from "./pages/Configuracion";
+import authRoutes from "./routers/authRoutes.js";
+import usersRoutes from "./routers/usersRoutes.js";
+
+dotenv.config();
+
+const app = express();
+
+app.use(cors({ origin: "*" }));
+app.use(express.json());
 
 // =========================
-// PRIVATE ROUTE
+// LOG
 // =========================
-function PrivateRoute({ children, role }) {
-  const session = JSON.parse(localStorage.getItem("usuario"));
+app.use((req, res, next) => {
+  console.log("➡️", req.method, req.url);
+  next();
+});
 
-  // ❌ sin sesión
-  if (!session) {
-    return <Navigate to="/" replace />;
+// =========================
+// TEST DB
+// =========================
+pool.query("SELECT NOW()")
+  .then((r) => {
+    console.log("✅ DB CONECTADA:", r.rows[0]);
+  })
+  .catch((err) => {
+    console.log("❌ DB ERROR:", err.message);
+  });
+
+// =========================
+// ROUTES
+// =========================
+app.use("/api/auth", authRoutes);
+app.use("/api/users", usersRoutes);
+
+// =========================
+// HEALTH
+// =========================
+app.get("/", (req, res) => {
+  res.send("🚀 EmpatIA Backend activo 🤍");
+});
+
+// =========================
+// CONFIG IA
+// =========================
+const MODEL = "models/gemini-2.5-flash";
+
+const API_KEY = process.env.GEMINI_API_KEY;
+
+const SYSTEM_PROMPT = `
+Eres EmpatIA.
+Respondes corto, empático y humano.
+No eres técnico.
+Si no puedes ayudar, sugieres actividades suaves.
+`;
+
+// =========================
+// GEMINI
+// =========================
+async function callGemini(message) {
+  try {
+
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `${SYSTEM_PROMPT}\nUsuario: ${message}`,
+                },
+              ],
+            },
+          ],
+        }),
+      }
+    );
+
+    const data = await r.json();
+
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    return {
+      ok: r.ok,
+      reply,
+    };
+
+  } catch (err) {
+
+    return {
+      ok: false,
+      reply: null,
+      error: err.message,
+    };
   }
-
-  const userRole = (session.role || "").toLowerCase().trim();
-
-  // 🔒 si requiere role específico
-  if (role && userRole !== role) {
-    return <Navigate to="/user" replace />;
-  }
-
-  return children;
 }
 
-export default function App() {
-  return (
-    <Routes>
+// =========================
+// CHAT
+// =========================
+app.post("/chat", async (req, res) => {
 
-      {/* ================= LOGIN ================= */}
-      <Route path="/" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+  const { message } = req.body;
 
-      {/* ================= ADMIN ================= */}
-      <Route
-        path="/admin"
-        element={
-          <PrivateRoute role="admin">
-            <Admin />
-          </PrivateRoute>
-        }
-      />
+  console.log("🔥 CHAT:", message);
 
-      {/* ================= USER ================= */}
-      <Route
-        path="/user"
-        element={
-          <PrivateRoute role="user">
-            <User />
-          </PrivateRoute>
-        }
-      />
+  if (!message?.trim()) {
+    return res.json({
+      reply: "🤍 Cuéntame cómo te sientes.",
+      errorType: "EMPTY",
+    });
+  }
 
-      {/* ================= MODULES ================= */}
-      <Route
-        path="/rutina"
-        element={
-          <PrivateRoute>
-            <Rutina />
-          </PrivateRoute>
-        }
-      />
+  const result = await callGemini(message);
 
-      <Route
-        path="/actividades"
-        element={
-          <PrivateRoute>
-            <Actividades />
-          </PrivateRoute>
-        }
-      />
+  if (!result.ok || !result.reply) {
 
-      <Route
-        path="/estadisticas"
-        element={
-          <PrivateRoute>
-            <Estadisticas />
-          </PrivateRoute>
-        }
-      />
+    return res.json({
+      reply:
+        "🤍 Ahora mismo no puedo responder… ¿quieres hacer una actividad?",
+      errorType: "IA_FAIL",
+    });
+  }
 
-      <Route
-        path="/motivacion"
-        element={
-          <PrivateRoute>
-            <Motivacion />
-          </PrivateRoute>
-        }
-      />
+  return res.json({
+    reply: result.reply,
+    model: MODEL,
+  });
+});
 
-      <Route
-        path="/diario"
-        element={
-          <PrivateRoute>
-            <Diario />
-          </PrivateRoute>
-        }
-      />
+// =========================
+// REGISTRAR ACTIVIDAD
+// =========================
+app.post("/registro-actividad", async (req, res) => {
 
-      <Route
-        path="/gustos"
-        element={
-          <PrivateRoute>
-            <Gustos />
-          </PrivateRoute>
-        }
-      />
+  try {
 
-      <Route
-        path="/configuracion"
-        element={
-          <PrivateRoute>
-            <Configuracion />
-          </PrivateRoute>
-        }
-      />
+    const {
+      id_usuario,
+      nombre_actividad,
+      puntaje_agrado,
+      frecuencia_deseada,
+      reaccion,
+    } = req.body;
 
-    </Routes>
-  );
-}
+    console.log("📩 BODY:", req.body);
+
+    if (!id_usuario || !nombre_actividad) {
+      return res.status(400).json({
+        error: "Faltan datos",
+      });
+    }
+
+    // =========================
+    // BUSCAR ACTIVIDAD
+    // =========================
+    let actividad = await pool.query(
+      `
+      SELECT id_actividad
+      FROM actividad
+      WHERE nombre = $1
+      `,
+      [nombre_actividad]
+    );
+
+    let id_actividad;
+
+    // =========================
+    // SI NO EXISTE -> CREAR
+    // =========================
+    if (actividad.rows.length === 0) {
+
+      console.log("➕ CREANDO ACTIVIDAD");
+
+      const nuevaActividad = await pool.query(
+        `
+        INSERT INTO actividad (
+          nombre,
+          categoria
+        )
+        VALUES ($1, $2)
+        RETURNING id_actividad
+        `,
+        [nombre_actividad, "general"]
+      );
+
+      id_actividad =
+        nuevaActividad.rows[0].id_actividad;
+
+    } else {
+
+      console.log("✅ ACTIVIDAD EXISTE");
+
+      id_actividad =
+        actividad.rows[0].id_actividad;
+    }
+
+    // =========================
+    // INSERT REGISTRO
+    // =========================
+    const result = await pool.query(
+      `
+      INSERT INTO registroactividad (
+        id_usuario,
+        id_actividad,
+        nombre_actividad,
+        puntaje_agrado,
+        frecuencia_deseada,
+        reaccion
+      )
+      VALUES ($1,$2,$3,$4,$5,$6)
+      RETURNING *
+      `,
+      [
+        id_usuario,
+        id_actividad,
+        nombre_actividad,
+        puntaje_agrado || 7,
+        frecuencia_deseada || "media",
+        reaccion || "positiva",
+      ]
+    );
+
+    console.log("✅ REGISTRO GUARDADO");
+
+    return res.json({
+      ok: true,
+      registro: result.rows[0],
+    });
+
+  } catch (err) {
+
+    console.log("❌ ERROR:", err);
+
+    return res.status(500).json({
+      error: err.message,
+    });
+  }
+});
+
+// =========================
+// MIS ACTIVIDADES
+// =========================
+app.get("/mis-actividades/:id", async (req, res) => {
+
+  try {
+
+    const id = req.params.id;
+
+    console.log("👤 USER ID:", id);
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM registroactividad
+      WHERE id_usuario = $1
+      ORDER BY creado_en DESC
+      `,
+      [id]
+    );
+
+    console.log("✅ ACTIVIDADES:", result.rows.length);
+
+    return res.json(result.rows);
+
+  } catch (err) {
+
+    console.log("❌ ERROR:", err);
+
+    return res.status(500).json([]);
+  }
+});
+
+// =========================
+// START
+// =========================
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`🚀 EmpatIA backend en puerto ${PORT}`);
+});
