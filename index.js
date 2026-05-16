@@ -2,50 +2,74 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 
+import authRoutes from "./routers/authRoutes.js";
+import usersRoutes from "./routers/usersRoutes.js";
+
 dotenv.config();
 
 const app = express();
 
-app.use(cors());
+// =====================================
+// CONFIG
+// =====================================
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// =========================
-// HEALTH CHECK
-// =========================
-app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA backend activo");
+// =====================================
+// LOGS
+// =====================================
+app.use((req, res, next) => {
+  console.log("➡️", req.method, req.url);
+  next();
 });
 
-// =========================
+// =====================================
+// ROUTES
+// =====================================
+app.use("/api/auth", authRoutes);
+app.use("/api/users", usersRoutes);
+
+// =====================================
+// HOME
+// =====================================
+app.get("/", (req, res) => {
+  res.send("🚀 EmpatIA Backend activo");
+});
+
+// =====================================
+// GEMINI
+// =====================================
+const MODEL = "models/gemini-2.5-flash";
+const API_KEY = process.env.GEMINI_API_KEY;
+
+// =====================================
 // CHAT IA
-// =========================
+// =====================================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  if (!message) {
+  console.log("📩 MESSAGE:", message);
+
+  if (!message?.trim()) {
     return res.json({
       reply: "🤍 Cuéntame cómo te sientes.",
-      errorType: "EMPTY",
     });
   }
 
   try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           contents: [
             {
               parts: [
                 {
-                  text: `
-Eres EmpatIA:
-- Responde corto
-- Empático
-- 1 o 2 frases máximo
-                  `,
+                  text: message,
                 },
               ],
             },
@@ -54,52 +78,38 @@ Eres EmpatIA:
       }
     );
 
-    const raw = await r.text();
-    let data = null;
-
-    try {
-      data = JSON.parse(raw);
-    } catch {}
-
-    // =========================
-    // ERROR GEMINI
-    // =========================
-    if (!r.ok) {
-      const msg = raw.toLowerCase();
-
-      // 🚨 TOKEN / CUOTA
-      if (
-        r.status === 429 ||
-        msg.includes("quota") ||
-        msg.includes("resource_exhausted")
-      ) {
-        return res.json({
-          reply: "🤍 Ahora mismo no tengo tokens disponibles.",
-          errorType: "TOKEN_LIMIT",
-        });
-      }
-
-      return res.json({
-        reply: "🤍 IA no disponible ahora.",
-        errorType: "IA_ERROR",
-      });
-    }
+    const data = await response.json();
 
     const reply =
       data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
+    console.log("📡 STATUS:", response.status);
+
+    if (!response.ok || !reply) {
+      return res.json({
+        reply: "🤍 No puedo responder ahora.",
+      });
+    }
+
     return res.json({
-      reply: reply || "🤍 No pude responder.",
+      reply,
+      model: MODEL,
     });
-  } catch (error) {
+
+  } catch (err) {
+    console.log("❌ ERROR:", err.message);
+
     return res.json({
       reply: "🤍 Error de conexión.",
-      errorType: "IA_ERROR",
     });
   }
 });
 
+// =====================================
+// START
+// =====================================
 const PORT = process.env.PORT || 3001;
+
 app.listen(PORT, () => {
-  console.log("🚀 Backend listo en puerto", PORT);
+  console.log(`🚀 Backend en puerto ${PORT}`);
 });
