@@ -14,7 +14,7 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // =========================
-// LOG GENERAL
+// LOG
 // =========================
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
@@ -22,23 +22,20 @@ app.use((req, res, next) => {
 });
 
 // =========================
-// ROUTES ADMIN / AUTH
+// ROUTES
 // =========================
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
 // =========================
-// ENV CHECK (CLAVE PARA TU ERROR)
+// HEALTH
 // =========================
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.log("❌ FALTAN VARIABLES SUPABASE_URL O SUPABASE_KEY");
-}
+app.get("/", (req, res) => {
+  res.send("🚀 EmpatIA Backend activo 🤍");
+});
 
 // =========================
-// GEMINI IA
+// IA
 // =========================
 const MODEL = "models/gemini-2.5-flash";
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -46,6 +43,7 @@ const API_KEY = process.env.GEMINI_API_KEY;
 const SYSTEM_PROMPT = `
 Eres EmpatIA.
 Respondes corto, empático y humano.
+Si no puedes responder, sugieres una actividad.
 `;
 
 async function callGemini(message) {
@@ -58,7 +56,11 @@ async function callGemini(message) {
         body: JSON.stringify({
           contents: [
             {
-              parts: [{ text: `${SYSTEM_PROMPT}\nUsuario: ${message}` }],
+              parts: [
+                {
+                  text: `${SYSTEM_PROMPT}\nUsuario: ${message}`,
+                },
+              ],
             },
           ],
         }),
@@ -67,12 +69,11 @@ async function callGemini(message) {
 
     const data = await r.json();
 
-    return {
-      ok: true,
-      reply: data?.candidates?.[0]?.content?.parts?.[0]?.text,
-    };
-  } catch (e) {
-    console.log("❌ GEMINI ERROR:", e);
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    return { ok: r.ok, reply };
+  } catch (err) {
     return { ok: false };
   }
 }
@@ -85,117 +86,88 @@ app.post("/chat", async (req, res) => {
 
   const result = await callGemini(message);
 
-  if (!result.ok) {
-    return res.json({ reply: "🤍 No puedo responder ahora" });
+  if (!result.ok || !result.reply) {
+    return res.json({
+      reply:
+        "🤍 Ahora no puedo responder… ¿quieres hacer una actividad?",
+      errorType: "IA_ERROR",
+    });
   }
 
   res.json({ reply: result.reply });
 });
 
 // =========================
-// GUARDAR ACTIVIDAD (SUPABASE FIX REAL)
+// 📌 ACTIVIDADES (TU BD REAL)
 // =========================
-app.post("/registro-actividad", async (req, res) => {
-  const {
-    id_usuario,
-    nombre_actividad,
-    puntaje_agrado,
-    frecuencia_deseada,
-    reaccion,
-  } = req.body;
-
-  try {
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-      return res.status(500).json({ error: "SUPABASE NO CONFIGURADO" });
-    }
-
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/registroactividad`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify({
-        id_usuario,
-        nombre_actividad,
-        puntaje_agrado,
-        frecuencia_deseada,
-        reaccion,
-      }),
-    });
-
-    const data = await r.json();
-
-    console.log("📩 INSERT RESPONSE:", data);
-
-    res.json(data?.[0] || { ok: true });
-  } catch (err) {
-    console.log("❌ ERROR DB:", err);
-    res.status(500).json({ error: "DB ERROR" });
-  }
-});
-
-// =========================
-// GET ACTIVIDADES USUARIO
-// =========================
-app.get("/mis-actividades/:id", async (req, res) => {
-  const { id } = req.params;
-
+app.get("/actividades", async (req, res) => {
   try {
     const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id}&select=*`,
+      `${process.env.SUPABASE_URL}/rest/v1/Actividad?select=*`,
       {
         headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
+          apikey: process.env.SUPABASE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
         },
-      }
-    );
-
-    const data = await r.json();
-    res.json(data || []);
-  } catch (err) {
-    console.log("❌ GET ACTIVIDADES ERROR:", err);
-    res.json([]);
-  }
-});
-
-// =========================
-// UPDATE GUSTO
-// =========================
-app.patch("/registro-actividad/:id", async (req, res) => {
-  const { id } = req.params;
-  const { puntaje_agrado } = req.body;
-
-  try {
-    const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/registroactividad?id_registro=eq.${id}`,
-      {
-        method: "PATCH",
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ puntaje_agrado }),
       }
     );
 
     const data = await r.json();
     res.json(data);
   } catch (err) {
-    console.log("❌ PATCH ERROR:", err);
-    res.status(500).json({ error: "UPDATE ERROR" });
+    res.status(500).json([]);
   }
 });
 
 // =========================
-// START SERVER
+// 📌 REGISTRO ACTIVIDAD (TU BD REAL)
+// =========================
+app.post("/registro-actividad", async (req, res) => {
+  const {
+    id_usuario,
+    id_actividad,
+    puntaje_agrado,
+    frecuencia_deseada,
+    reaccion,
+  } = req.body;
+
+  try {
+    const r = await fetch(
+      `${process.env.SUPABASE_URL}/rest/v1/RegistroActividad`,
+      {
+        method: "POST",
+        headers: {
+          apikey: process.env.SUPABASE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify([
+          {
+            id_usuario,
+            id_actividad,
+            puntaje_agrado,
+            frecuencia_deseada,
+            reaccion,
+            fecha: new Date().toISOString(),
+          },
+        ]),
+      }
+    );
+
+    const data = await r.json();
+
+    res.json(data?.[0] || { ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "DB ERROR" });
+  }
+});
+
+// =========================
+// START
 // =========================
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log(`🚀 EmpatIA backend corriendo en puerto ${PORT}`);
+  console.log(`🚀 EmpatIA backend en puerto ${PORT}`);
 });
