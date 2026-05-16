@@ -1,11 +1,6 @@
-// =========================
-// INDEX.JS COMPLETO MOD
-// =========================
-
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import fetch from "node-fetch";
 
 import authRoutes from "./routers/authRoutes.js";
 import usersRoutes from "./routers/usersRoutes.js";
@@ -15,291 +10,186 @@ dotenv.config();
 const app = express();
 
 app.use(cors({ origin: "*" }));
+// =========================
+// MIDDLEWARE
+// =========================
+app.use(cors());
 app.use(express.json());
 
 // =========================
-// LOG
-// =========================
-app.use((req, res, next) => {
-  console.log("➡️", req.method, req.url);
-  next();
-});
-
-// =========================
+// ROUTES BASE
 // ROUTES
 // =========================
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
 // =========================
-// HEALTH
+// HEALTH CHECK
+// HOME
 // =========================
 app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA Backend activo 🤍");
+  res.send("🚀 EmpatIA Backend activo");
+  res.send("🚀 Backend EmpatIA activo");
 });
 
 // =========================
-// CONFIG IA
+// CHAT IA (GEMINI)
+// GEMINI CONFIG
 // =========================
-const MODEL = "models/gemini-2.5-flash";
-const API_KEY = process.env.GEMINI_API_KEY;
-
-const SYSTEM_PROMPT = `
-Eres EmpatIA.
-Respondes corto, empático y humano.
-No eres técnico.
-Si no puedes ayudar, sugieres una actividad suave.
-`;
+const MODEL = "gemini-2.0-flash";
 
 // =========================
-// IA
+// CHAT IA
 // =========================
-async function callGemini(message) {
+app.post("/chat", async (req, res) => {
+  const { message } = req.body;
+@@ -39,7 +47,7 @@
+
   try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+@@ -53,10 +61,13 @@
+                  text: `
+Eres EmpatIA.
+
+Reglas:
+- Responde corto
+- 1 o 2 frases
+- Máximo 2 frases
+- Empático y humano
+- Sin explicaciones largas
+- Nunca robot
+- Primero acompaña emocionalmente
+- Luego sugerencia opcional
+
+Usuario: ${message}
+                  `,
+@@ -71,14 +82,16 @@
+    if (!response.ok) {
+      const err = await response.text();
+
+      console.error("ERROR GEMINI:", err);
+
+      if (response.status === 429) {
+        return res.json({
+          reply: "🤍 IA sin tokens disponibles ahora mismo.",
+        return res.status(429).json({
+          reply: "🤍 Sin tokens disponibles ahora mismo.",
+        });
+      }
+
+      return res.json({
+        reply: "😢 Error con la IA.",
+      return res.status(response.status).json({
+        reply: "😢 Error con la IA",
+      });
+    }
+
+@@ -87,95 +100,27 @@
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    return res.json({
+      reply: reply || "No hubo respuesta.",
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.json({
+      reply: "Error del servidor.",
+    });
+  }
+});
+
+// =========================
+// AI STATUS (REAL CHECK)
+// =========================
+app.get("/api/ai-status", async (req, res) => {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+    if (!reply) {
+      return res.json({
+        online: false,
+        token: false,
+        model: "gemini-2.0-flash",
+        message: "API KEY no configurada",
+        reply: "😢 Sin respuesta de la IA",
+      });
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           contents: [
             {
-              parts: [
-                {
-                  text: `${SYSTEM_PROMPT}\nUsuario: ${message}`,
-                },
-              ],
+              parts: [{ text: "ping" }],
             },
           ],
         }),
       }
     );
 
-    const data = await r.json();
+    if (!response.ok) {
+      return res.json({
+        online: false,
+        token: true,
+        model: "gemini-2.0-flash",
+        message: "IA caída o sin cuota",
+      });
+    }
 
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    return {
-      ok: r.ok,
-      reply,
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      reply: null,
-    };
-  }
-}
-
-// =========================
-// CHAT
-// =========================
-app.post("/chat", async (req, res) => {
-  const { message } = req.body;
-
-  console.log("🔥 CHAT:", message);
-
-  if (!message?.trim()) {
     return res.json({
-      reply: "🤍 Cuéntame cómo te sientes.",
-      errorType: "EMPTY",
+      online: true,
+      token: true,
+      model: "gemini-2.0-flash",
+      message: "IA operativa",
+    });
+    res.json({ reply });
+  } catch (error) {
+    return res.json({
+      online: false,
+      token: false,
+      model: "error",
+      message: "Sin conexión con IA",
+    console.error(error);
+
+    res.status(500).json({
+      reply: "Error del servidor",
     });
   }
+});
 
-  const result = await callGemini(message);
+// =========================
+// SYSTEM STATUS (CPU / RAM REAL NODE)
+// =========================
+app.get("/api/system-status", (req, res) => {
+  const mem = process.memoryUsage();
 
-  if (!result.ok || !result.reply) {
-    return res.json({
-      reply:
-        "🤍 Ahora mismo no puedo responder… ¿quieres hacer una actividad?",
-      errorType: "IA_FAIL",
-    });
-  }
+  const ramMB = Math.round(mem.heapUsed / 1024 / 1024);
 
-  return res.json({
-    reply: result.reply,
-    model: MODEL,
+  res.json({
+    server: "online",
+    ram: `${ramMB} MB`,
+    uptime: `${Math.floor(process.uptime())}s`,
+    database: true,
   });
 });
 
 // =========================
-// OBTENER ACTIVIDADES BASE
-// =========================
-app.get("/actividades", async (req, res) => {
-  try {
-    const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/actividad?select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
-    );
-
-    const data = await r.json();
-
-    res.json(data || []);
-  } catch (err) {
-    console.log(err);
-    res.json([]);
-  }
-});
-
-// =========================
-// REGISTRAR ACTIVIDAD
-// =========================
-app.post("/registro-actividad", async (req, res) => {
-  try {
-    const {
-      id_usuario,
-      nombre_actividad,
-      puntaje_agrado,
-      frecuencia_deseada,
-      reaccion,
-    } = req.body;
-
-    console.log("📩 BODY:", req.body);
-
-    if (!id_usuario || !nombre_actividad) {
-      return res.status(400).json({
-        error: "Faltan datos",
-      });
-    }
-
-    // =========================
-    // BUSCAR ACTIVIDAD
-    // =========================
-    const search = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/actividad?nombre=eq.${encodeURIComponent(
-        nombre_actividad
-      )}&select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
-    );
-
-    const actividades = await search.json();
-
-    let id_actividad = null;
-
-    // =========================
-    // SI NO EXISTE -> CREAR
-    // =========================
-    if (!actividades?.length) {
-      console.log("🆕 CREANDO ACTIVIDAD");
-
-      const create = await fetch(
-        `${process.env.SUPABASE_URL}/rest/v1/actividad`,
-        {
-          method: "POST",
-          headers: {
-            apikey: process.env.SUPABASE_KEY,
-            Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-            "Content-Type": "application/json",
-            Prefer: "return=representation",
-          },
-          body: JSON.stringify([
-            {
-              nombre: nombre_actividad,
-              descripcion: nombre_actividad,
-              categoria: "general",
-            },
-          ]),
-        }
-      );
-
-      const nuevaActividad = await create.json();
-
-      console.log("✅ ACTIVIDAD CREADA:", nuevaActividad);
-
-      id_actividad = nuevaActividad?.[0]?.id_actividad;
-    } else {
-      id_actividad = actividades[0].id_actividad;
-    }
-
-    console.log("🎯 ID ACTIVIDAD:", id_actividad);
-
-    // =========================
-    // INSERTAR REGISTRO
-    // =========================
-    const insert = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/registroactividad`,
-      {
-        method: "POST",
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify([
-          {
-            id_usuario,
-            id_actividad,
-            nombre_actividad,
-            puntaje_agrado: puntaje_agrado || 7,
-            frecuencia_deseada:
-              frecuencia_deseada || "media",
-            reaccion: reaccion || "positiva",
-          },
-        ]),
-      }
-    );
-
-    const data = await insert.json();
-
-    console.log("✅ REGISTRO:", data);
-
-    res.json(data?.[0] || {});
-  } catch (err) {
-    console.log("❌ ERROR:", err);
-
-    res.status(500).json({
-      error: "Error guardando actividad",
-    });
-  }
-});
-
-// =========================
-// MIS ACTIVIDADES
-// =========================
-app.get("/mis-actividades/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    console.log("👤 USER ID:", id);
-
-    const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id}&order=creado_en.desc&select=*`,
-      {
-        headers: {
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-        },
-      }
-    );
-
-    const data = await r.json();
-
-    console.log("📦 ACTIVIDADES USER:", data);
-
-    res.json(data || []);
-  } catch (err) {
-    console.log(err);
-    res.json([]);
-  }
-});
-
-// =========================
-// START
+// START SERVER
 // =========================
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log(`🚀 EmpatIA backend en puerto ${PORT}`);
+  console.log(`🚀 Backend corriendo en puerto ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
