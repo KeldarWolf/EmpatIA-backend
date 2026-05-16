@@ -1,140 +1,135 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import fetch from "node-fetch";
 
 import authRoutes from "./routers/authRoutes.js";
+import usersRoutes from "./routers/usersRoutes.js";
 
 dotenv.config();
 
 const app = express();
+
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-app.use((req, res, next) => {
-  console.log("➡️", req.method, req.url);
-  next();
+// ✅ rutas existentes
+app.use("/api/auth", authRoutes);
+app.use("/api/users", usersRoutes);
+
+// ✅ modelo Gemini NUEVO
+const MODEL = "gemini-2.0-flash";
+
+// ✅ inicio
+app.get("/", (req, res) => {
+  res.send("🚀 Backend EmpatIA activo");
 });
 
-app.use("/api/auth", authRoutes);
-
-// =========================
-// CONFIG SEGURA SUPABASE
-// =========================
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.warn("⚠️ SUPABASE NO CONFIGURADO");
-}
-
-// =========================
-// CHAT
-// =========================
+// ✅ chat IA
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          { parts: [{ text: `EmpatIA: ${message}` }] }
-        ],
-      }),
-    }
-  );
-
-  const data = await r.json();
-
-  res.json({
-    reply:
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "🤍 No respuesta",
-  });
-});
-
-// =========================
-// GUARDAR ACTIVIDAD (FIX REAL)
-// =========================
-app.post("/registro-actividad", async (req, res) => {
-  try {
-    if (!SUPABASE_URL) {
-      return res.status(500).json({ error: "Supabase no configurado" });
-    }
-
-    const body = req.body;
-
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/registroactividad`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify([body]),
+  // validar mensaje
+  if (!message || !message.trim()) {
+    return res.status(400).json({
+      reply: "Mensaje vacío",
     });
-
-    const data = await r.json();
-
-    res.json(data?.[0] || { ok: true });
-  } catch (e) {
-    console.log("ERROR:", e);
-    res.status(500).json({ error: "error guardar actividad" });
   }
-});
 
-// =========================
-// GET ACTIVIDADES
-// =========================
-app.get("/mis-actividades/:id", async (req, res) => {
   try {
-    const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${req.params.id}&select=*`,
+    // 🔥 petición Gemini
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-        },
-      }
-    );
+        method: "POST",
 
-    const data = await r.json();
-    res.json(data || []);
-  } catch {
-    res.json([]);
-  }
-});
-
-// =========================
-// UPDATE GUSTO
-// =========================
-app.patch("/registro-actividad/:id", async (req, res) => {
-  try {
-    const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/registroactividad?id_registro=eq.${req.params.id}`,
-      {
-        method: "PATCH",
         headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(req.body),
+
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `
+Eres EmpatIA.
+
+Reglas:
+- Responde corto
+- Máximo 2 frases
+- Natural y humano
+- Cercano y calmado
+- No hagas respuestas largas
+- Si el usuario no sabe qué hacer,
+  recomienda SOLO UNA actividad:
+  caminar, respirar, escuchar música o escribir
+
+Usuario: ${message}
+                  `,
+                },
+              ],
+            },
+          ],
+        }),
       }
     );
 
-    const data = await r.json();
-    res.json(data);
-  } catch {
-    res.status(500).json({ error: "update error" });
+    // ❌ error HTTP Gemini
+    if (!response.ok) {
+      const errText = await response.text();
+
+      console.error("GEMINI HTTP ERROR:");
+      console.error(errText);
+
+      return res.status(response.status).json({
+        reply: errText,
+      });
+    }
+
+    // ✅ respuesta Gemini
+    const data = await response.json();
+
+    console.log(
+      "GEMINI RESPONSE:",
+      JSON.stringify(data, null, 2)
+    );
+
+    // ❌ error interno Gemini
+    if (data.error) {
+      return res.status(500).json({
+        reply: data.error.message,
+      });
+    }
+
+    // ✅ obtener texto IA
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    // ❌ sin texto
+    if (!reply) {
+      return res.status(500).json({
+        reply: "Gemini no devolvió respuesta",
+      });
+    }
+
+    // ✅ respuesta final
+    res.json({
+      reply,
+    });
+
+  } catch (error) {
+    console.error("SERVER ERROR:");
+    console.error(error);
+
+    res.status(500).json({
+      reply: error.message || "Error servidor",
+    });
   }
 });
 
+// ✅ puerto Render/local
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () =>
-  console.log("🚀 backend listo en puerto", PORT)
-);
+
+app.listen(PORT, () => {
+  console.log(`🚀 Backend corriendo en puerto ${PORT}`);
+});
