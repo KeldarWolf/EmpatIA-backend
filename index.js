@@ -1,3 +1,51 @@
+// ============================================
+// index.js
+// ============================================
+
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+
+import authRoutes from "./routers/authRoutes.js";
+import usersRoutes from "./routers/usersRoutes.js";
+
+dotenv.config();
+
+const app = express();
+
+// =====================================
+// CONFIG
+// =====================================
+app.use(cors({ origin: "*" }));
+app.use(express.json());
+
+// =====================================
+// LOGS
+// =====================================
+app.use((req, res, next) => {
+  console.log("➡️", req.method, req.url);
+  next();
+});
+
+// =====================================
+// ROUTES
+// =====================================
+app.use("/api/auth", authRoutes);
+app.use("/api/users", usersRoutes);
+
+// =====================================
+// HOME
+// =====================================
+app.get("/", (req, res) => {
+  res.send("🚀 EmpatIA Backend activo");
+});
+
+// =====================================
+// GEMINI
+// =====================================
+const MODEL = "models/gemini-2.5-flash";
+const API_KEY = process.env.GEMINI_API_KEY;
+
 // =====================================
 // CHAT IA
 // =====================================
@@ -21,7 +69,7 @@ app.post("/chat", async (req, res) => {
   try {
 
     // =====================================
-    // PROMPT IA
+    // PROMPT EMPATIA
     // =====================================
     const prompt = `
 Eres EmpatIA.
@@ -31,12 +79,15 @@ Responde corto, humano y empático.
 Usa respuestas breves.
 Nunca expliques palabras como diccionario.
 
-Si el usuario dice cosas como:
+Si el usuario dice palabras como:
 "mal", "triste", "vacío", "solo",
 interpreta emoción y no significado.
 
 Si detectas malestar:
 invita actividades saludables.
+
+Nunca respondas como traductor,
+diccionario o profesor.
 
 Usuario: ${message}
 `;
@@ -67,6 +118,9 @@ Usuario: ${message}
       }
     );
 
+    // =====================================
+    // DATA
+    // =====================================
     const data = await response.json();
 
     console.log("📡 STATUS:", response.status);
@@ -88,7 +142,7 @@ Usuario: ${message}
 
         messages: [
           "⚠️ Ocurrió un problema con la IA.",
-          "🤍 Lo siento, ahora mismo no puedo entablar una conversación contigo.",
+          "🤍 Lo siento, ahora mismo no puedo conversar contigo.",
           "✨ ¿Quieres iniciar una actividad para sentirte mejor?",
         ],
 
@@ -119,11 +173,20 @@ Usuario: ${message}
 
       messages: [
         "⚠️ Error de conexión con la IA.",
-        "🤍 Lo siento, en este momento no puedo conversar contigo.",
+        "🤍 Lo siento, ahora mismo no puedo conversar contigo.",
         "✨ ¿Quieres iniciar una actividad para sentirte mejor?",
       ],
 
       options: ["Sí", "No"],
     });
   }
+});
+
+// =====================================
+// START
+// =====================================
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Backend en puerto ${PORT}`);
 });
