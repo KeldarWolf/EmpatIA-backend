@@ -1,195 +1,135 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
+import { Routes, Route, Navigate } from "react-router-dom";
 
-import authRoutes from "./routers/authRoutes.js";
-import usersRoutes from "./routers/usersRoutes.js";
+// AUTH
+import Login from "./pages/Login/Login";
+import Register from "./pages/Register";
 
-dotenv.config();
+// DASHBOARD
+import User from "./pages/User/User";
+import Admin from "./pages/Admin";
 
-const app = express();
-
-app.use(cors({ origin: "*" }));
-// =========================
-// MIDDLEWARE
-// =========================
-app.use(cors());
-app.use(express.json());
-
-// =========================
-// ROUTES BASE
-// ROUTES
-// =========================
-app.use("/api/auth", authRoutes);
-app.use("/api/users", usersRoutes);
+// MODULES
+import Rutina from "./pages/Rutina";
+import Actividades from "./pages/User/Actividades/Actividades";
+import Estadisticas from "./pages/User/Estadisticas/Estadisticas";
+import Motivacion from "./pages/Motivacion";
+import Diario from "./pages/Diario";
+import Gustos from "./pages/Gustos";
+import Configuracion from "./pages/Configuracion";
 
 // =========================
-// HEALTH CHECK
-// HOME
+// PRIVATE ROUTE
 // =========================
-app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA Backend activo");
-  res.send("🚀 Backend EmpatIA activo");
-});
+function PrivateRoute({ children, role }) {
+  const session = JSON.parse(localStorage.getItem("usuario"));
 
-// =========================
-// CHAT IA (GEMINI)
-// GEMINI CONFIG
-// =========================
-const MODEL = "gemini-2.0-flash";
-
-// =========================
-// CHAT IA
-// =========================
-app.post("/chat", async (req, res) => {
-  const { message } = req.body;
-@@ -39,7 +47,7 @@
-
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: {
-@@ -53,10 +61,13 @@
-                  text: `
-Eres EmpatIA.
-
-Reglas:
-- Responde corto
-- 1 o 2 frases
-- Máximo 2 frases
-- Empático y humano
-- Sin explicaciones largas
-- Nunca robot
-- Primero acompaña emocionalmente
-- Luego sugerencia opcional
-
-Usuario: ${message}
-                  `,
-@@ -71,14 +82,16 @@
-    if (!response.ok) {
-      const err = await response.text();
-
-      console.error("ERROR GEMINI:", err);
-
-      if (response.status === 429) {
-        return res.json({
-          reply: "🤍 IA sin tokens disponibles ahora mismo.",
-        return res.status(429).json({
-          reply: "🤍 Sin tokens disponibles ahora mismo.",
-        });
-      }
-
-      return res.json({
-        reply: "😢 Error con la IA.",
-      return res.status(response.status).json({
-        reply: "😢 Error con la IA",
-      });
-    }
-
-@@ -87,95 +100,27 @@
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    return res.json({
-      reply: reply || "No hubo respuesta.",
-    });
-  } catch (error) {
-    console.error(error);
-
-    return res.json({
-      reply: "Error del servidor.",
-    });
+  // ❌ sin sesión
+  if (!session) {
+    return <Navigate to="/" replace />;
   }
-});
 
-// =========================
-// AI STATUS (REAL CHECK)
-// =========================
-app.get("/api/ai-status", async (req, res) => {
-  try {
-    if (!process.env.GEMINI_API_KEY) {
-    if (!reply) {
-      return res.json({
-        online: false,
-        token: false,
-        model: "gemini-2.0-flash",
-        message: "API KEY no configurada",
-        reply: "😢 Sin respuesta de la IA",
-      });
-    }
+  const userRole = (session.role || "").toLowerCase().trim();
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: "ping" }],
-            },
-          ],
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      return res.json({
-        online: false,
-        token: true,
-        model: "gemini-2.0-flash",
-        message: "IA caída o sin cuota",
-      });
-    }
-
-    return res.json({
-      online: true,
-      token: true,
-      model: "gemini-2.0-flash",
-      message: "IA operativa",
-    });
-    res.json({ reply });
-  } catch (error) {
-    return res.json({
-      online: false,
-      token: false,
-      model: "error",
-      message: "Sin conexión con IA",
-    console.error(error);
-
-    res.status(500).json({
-      reply: "Error del servidor",
-    });
+  // 🔒 si requiere role específico
+  if (role && userRole !== role) {
+    return <Navigate to="/user" replace />;
   }
-});
 
-// =========================
-// SYSTEM STATUS (CPU / RAM REAL NODE)
-// =========================
-app.get("/api/system-status", (req, res) => {
-  const mem = process.memoryUsage();
+  return children;
+}
 
-  const ramMB = Math.round(mem.heapUsed / 1024 / 1024);
+export default function App() {
+  return (
+    <Routes>
 
-  res.json({
-    server: "online",
-    ram: `${ramMB} MB`,
-    uptime: `${Math.floor(process.uptime())}s`,
-    database: true,
-  });
-});
+      {/* ================= LOGIN ================= */}
+      <Route path="/" element={<Login />} />
+      <Route path="/register" element={<Register />} />
 
-// =========================
-// START SERVER
-// =========================
-const PORT = process.env.PORT || 3001;
+      {/* ================= ADMIN ================= */}
+      <Route
+        path="/admin"
+        element={
+          <PrivateRoute role="admin">
+            <Admin />
+          </PrivateRoute>
+        }
+      />
 
-app.listen(PORT, () => {
-  console.log(`🚀 Backend corriendo en puerto ${PORT}`);
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+      {/* ================= USER ================= */}
+      <Route
+        path="/user"
+        element={
+          <PrivateRoute role="user">
+            <User />
+          </PrivateRoute>
+        }
+      />
+
+      {/* ================= MODULES ================= */}
+      <Route
+        path="/rutina"
+        element={
+          <PrivateRoute>
+            <Rutina />
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/actividades"
+        element={
+          <PrivateRoute>
+            <Actividades />
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/estadisticas"
+        element={
+          <PrivateRoute>
+            <Estadisticas />
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/motivacion"
+        element={
+          <PrivateRoute>
+            <Motivacion />
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/diario"
+        element={
+          <PrivateRoute>
+            <Diario />
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/gustos"
+        element={
+          <PrivateRoute>
+            <Gustos />
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/configuracion"
+        element={
+          <PrivateRoute>
+            <Configuracion />
+          </PrivateRoute>
+        }
+      />
+
+    </Routes>
+  );
+}
