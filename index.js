@@ -1,295 +1,201 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import "./user.css";
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import fetch from "node-fetch";
 
-import ChatBox from "./ChatBox";
-import InputBox from "./InputBox";
-import frases from "./frases";
+import authRoutes from "./routers/authRoutes.js";
+import usersRoutes from "./routers/usersRoutes.js";
 
-const API_URL = "https://empatia-backend.onrender.com";
+dotenv.config();
+
+const app = express();
+
+app.use(cors({ origin: "*" }));
+app.use(express.json());
 
 // =========================
-// ACTIVIDADES
+// LOG GENERAL
 // =========================
-const actividades = [
-  {
-    nombre: "🎵 Música",
-    prompt: "Recomienda una actividad musical relajante y explica cómo hacerla paso a paso.",
-  },
-  {
-    nombre: "🧘 Relajación",
-    prompt: "Explica una actividad simple de relajación guiada para alguien con ansiedad.",
-  },
-  {
-    nombre: "🚶 Ejercicio ligero",
-    prompt: "Explica un ejercicio suave y fácil para mejorar el ánimo.",
-  },
-  {
-    nombre: "📖 Lectura",
-    prompt: "Recomienda una actividad de lectura tranquila y cómo disfrutarla.",
-  },
-  {
-    nombre: "🎨 Creatividad",
-    prompt: "Explica una actividad creativa relajante y entretenida.",
-  },
-];
+app.use((req, res, next) => {
+  console.log("➡️", req.method, req.url);
+  next();
+});
 
-export default function User() {
-  const navigate = useNavigate();
+// =========================
+// ROUTES ADMIN / AUTH
+// =========================
+app.use("/api/auth", authRoutes);
+app.use("/api/users", usersRoutes);
 
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
+// =========================
+// ENV CHECK (CLAVE PARA TU ERROR)
+// =========================
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
-  const [selectedActivity, setSelectedActivity] = useState(null);
-  const [activityResponse, setActivityResponse] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  const [gusto, setGusto] = useState(5);
-  const [savedActivities, setSavedActivities] = useState([]);
-
-  const [frase, setFrase] = useState("");
-
-  // =========================
-  // INIT
-  // =========================
-  useEffect(() => {
-    const random = frases[Math.floor(Math.random() * frases.length)];
-    setFrase(random);
-
-    const user = localStorage.getItem("nombre") || "Usuario";
-
-    setMessages([
-      { sender: "bot", text: `Hola ${user} 💙 estoy aquí contigo` },
-      { sender: "bot", text: "Cuéntame cómo te sientes..." },
-    ]);
-  }, []);
-
-  // =========================
-  // CHAT IA
-  // =========================
-  const sendMessage = async () => {
-    if (!input.trim()) return;
-
-    setMessages((prev) => [...prev, { sender: "user", text: input }]);
-
-    const userInput = input;
-    setInput("");
-
-    try {
-      const res = await fetch(`${API_URL}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userInput }),
-      });
-
-      const data = await res.json();
-
-      setMessages((prev) => [
-        ...prev,
-        { sender: "bot", text: data.reply || "Estoy aquí contigo 💙" },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { sender: "bot", text: "⚠ Error al conectar con EmpatIA" },
-      ]);
-    }
-  };
-
-  // =========================
-  // ABRIR ACTIVIDAD (BD + IA)
-  // =========================
-  const openActivity = async (activity) => {
-    setSelectedActivity(activity);
-    setActivityResponse([]);
-    setLoading(true);
-
-    try {
-      const resBD = await fetch(
-        `${API_URL}/actividades?nombre=eq.${activity.nombre.replace(/🎵|🧘|🚶|📖|🎨/g, "").trim()}`
-      );
-
-      const bd = await resBD.json();
-      const instruccion = bd?.[0]?.instrucciones;
-
-      if (instruccion) {
-        setActivityResponse(instruccion.split(". "));
-      } else {
-        const res = await fetch(`${API_URL}/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: activity.prompt }),
-        });
-
-        const data = await res.json();
-        setActivityResponse((data.reply || "").split("\n"));
-      }
-    } catch {
-      setActivityResponse(["⚠ Error cargando actividad"]);
-    }
-
-    setLoading(false);
-  };
-
-  // =========================
-  // GUARDAR ACTIVIDAD EN BD
-  // =========================
-  const guardarActividad = async () => {
-    if (!selectedActivity) return;
-
-    const user = JSON.parse(localStorage.getItem("usuario"));
-
-    const payload = {
-      id_usuario: user?.id_usuario,
-      nombre_actividad: selectedActivity.nombre,
-      puntaje_agrado: Number(gusto),
-      frecuencia_deseada: "media",
-      reaccion: "positiva",
-    };
-
-    try {
-      await fetch(`${API_URL}/registro-actividad`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      setSavedActivities((prev) => [
-        { nombre: selectedActivity.nombre, gusto, fecha: new Date() },
-        ...prev,
-      ]);
-    } catch (err) {
-      console.log(err);
-    }
-  };
-
-  return (
-    <div className="user-container">
-
-      {/* SIDEBAR */}
-      <div className="sidebar">
-        <h2>🎯 Actividades</h2>
-
-        {actividades.map((act, i) => (
-          <button
-            key={i}
-            className="activity-btn"
-            onClick={() => openActivity(act)}
-          >
-            {act.nombre}
-          </button>
-        ))}
-
-        <button
-          className="logout-btn"
-          onClick={() => {
-            localStorage.clear();
-            navigate("/");
-          }}
-        >
-          ⬅ Salir
-        </button>
-      </div>
-
-      {/* MAIN */}
-      <div className="main-content">
-
-        {/* FRASE */}
-        <div className="frase-box">✨ {frase}</div>
-
-        {/* CHAT */}
-        <div className="chat-section">
-          <h2>💬 Acompañamiento</h2>
-
-          <ChatBox messages={messages} />
-
-          <InputBox
-            input={input}
-            setInput={setInput}
-            sendMessage={sendMessage}
-          />
-        </div>
-
-        {/* ACTIVIDAD ABIERTA */}
-        {selectedActivity && (
-          <div className="activity-box">
-
-            <h2>🧠 {selectedActivity.nombre}</h2>
-
-            {loading && <p>🤖 Cargando...</p>}
-
-            {!loading && (
-              <>
-                <div className="ia-response">
-                  {activityResponse.map((msg, i) => (
-                    <p key={i}>{msg}</p>
-                  ))}
-                </div>
-
-                {/* =========================
-                    GUSTO BAR
-                ========================== */}
-                <div className="gusto-box">
-
-                  <p style={{ fontSize: 12 }}>
-                    ⭐ Gusto: {gusto}/10
-                  </p>
-
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {Array.from({ length: 10 }, (_, i) => {
-                      const val = i + 1;
-
-                      return (
-                        <div
-                          key={i}
-                          onClick={() => setGusto(val)}
-                          style={{
-                            width: 18,
-                            height: 8,
-                            background:
-                              val <= gusto ? "#22c55e" : "#374151",
-                            cursor: "pointer",
-                            borderRadius: 3,
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    className="save-btn"
-                    onClick={guardarActividad}
-                  >
-                    💾 Guardar actividad
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* GUARDADAS */}
-        <div className="saved-box">
-          <h2>📌 Actividades guardadas</h2>
-
-          {savedActivities.length === 0 && (
-            <p>No tienes actividades aún</p>
-          )}
-
-          {savedActivities.map((a, i) => (
-            <div key={i} className="saved-card">
-              <h3>{a.nombre}</h3>
-
-              <p>⭐ Gusto: {a.gusto}/10</p>
-
-              <p>
-                📅 {new Date(a.fecha).toLocaleDateString()}
-              </p>
-            </div>
-          ))}
-        </div>
-
-      </div>
-    </div>
-  );
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.log("❌ FALTAN VARIABLES SUPABASE_URL O SUPABASE_KEY");
 }
+
+// =========================
+// GEMINI IA
+// =========================
+const MODEL = "models/gemini-2.5-flash";
+const API_KEY = process.env.GEMINI_API_KEY;
+
+const SYSTEM_PROMPT = `
+Eres EmpatIA.
+Respondes corto, empático y humano.
+`;
+
+async function callGemini(message) {
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: `${SYSTEM_PROMPT}\nUsuario: ${message}` }],
+            },
+          ],
+        }),
+      }
+    );
+
+    const data = await r.json();
+
+    return {
+      ok: true,
+      reply: data?.candidates?.[0]?.content?.parts?.[0]?.text,
+    };
+  } catch (e) {
+    console.log("❌ GEMINI ERROR:", e);
+    return { ok: false };
+  }
+}
+
+// =========================
+// CHAT
+// =========================
+app.post("/chat", async (req, res) => {
+  const { message } = req.body;
+
+  const result = await callGemini(message);
+
+  if (!result.ok) {
+    return res.json({ reply: "🤍 No puedo responder ahora" });
+  }
+
+  res.json({ reply: result.reply });
+});
+
+// =========================
+// GUARDAR ACTIVIDAD (SUPABASE FIX REAL)
+// =========================
+app.post("/registro-actividad", async (req, res) => {
+  const {
+    id_usuario,
+    nombre_actividad,
+    puntaje_agrado,
+    frecuencia_deseada,
+    reaccion,
+  } = req.body;
+
+  try {
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      return res.status(500).json({ error: "SUPABASE NO CONFIGURADO" });
+    }
+
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/registroactividad`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify({
+        id_usuario,
+        nombre_actividad,
+        puntaje_agrado,
+        frecuencia_deseada,
+        reaccion,
+      }),
+    });
+
+    const data = await r.json();
+
+    console.log("📩 INSERT RESPONSE:", data);
+
+    res.json(data?.[0] || { ok: true });
+  } catch (err) {
+    console.log("❌ ERROR DB:", err);
+    res.status(500).json({ error: "DB ERROR" });
+  }
+});
+
+// =========================
+// GET ACTIVIDADES USUARIO
+// =========================
+app.get("/mis-actividades/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${id}&select=*`,
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+      }
+    );
+
+    const data = await r.json();
+    res.json(data || []);
+  } catch (err) {
+    console.log("❌ GET ACTIVIDADES ERROR:", err);
+    res.json([]);
+  }
+});
+
+// =========================
+// UPDATE GUSTO
+// =========================
+app.patch("/registro-actividad/:id", async (req, res) => {
+  const { id } = req.params;
+  const { puntaje_agrado } = req.body;
+
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/registroactividad?id_registro=eq.${id}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ puntaje_agrado }),
+      }
+    );
+
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    console.log("❌ PATCH ERROR:", err);
+    res.status(500).json({ error: "UPDATE ERROR" });
+  }
+});
+
+// =========================
+// START SERVER
+// =========================
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`🚀 EmpatIA backend corriendo en puerto ${PORT}`);
+});
