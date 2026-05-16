@@ -13,39 +13,22 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// =====================
-// LOGS
-// =====================
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
   next();
 });
 
-// =====================
-// ROUTES BASE
-// =====================
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 
-// =====================
-// HOME
-// =====================
-app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA Backend activo");
-});
-
-// =====================
-// IA CHAT
-// =====================
 const MODEL = "models/gemini-2.5-flash";
 const API_KEY = process.env.GEMINI_API_KEY;
 
+/* =========================
+   CHAT IA (solo fallback)
+========================= */
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
-
-  if (!message?.trim()) {
-    return res.json({ reply: "🤍 Cuéntame cómo te sientes." });
-  }
 
   try {
     const response = await fetch(
@@ -67,23 +50,22 @@ app.post("/chat", async (req, res) => {
     if (!reply) {
       return res.json({
         reply:
-          "🤍 No pude responder ahora, pero puedo ayudarte con una actividad.",
+          "🤍 No puedo responder ahora, pero puedo ayudarte con una actividad.",
       });
     }
 
     return res.json({ reply });
   } catch (err) {
-    console.log("IA ERROR:", err.message);
     return res.json({
       reply:
-        "🤍 La IA no está disponible, pero puedo ayudarte con una actividad.",
+        "🤍 La IA no está disponible. Puedo sugerirte una actividad.",
     });
   }
 });
 
-// =====================
-// ACTIVIDADES REGISTRO
-// =====================
+/* =========================
+   GUARDAR ACTIVIDAD
+========================= */
 app.post("/api/registro-actividad", async (req, res) => {
   const {
     id_usuario,
@@ -98,7 +80,7 @@ app.post("/api/registro-actividad", async (req, res) => {
     const result = await pool.query(
       `INSERT INTO registroactividad
       (id_usuario, id_actividad, nombre_actividad, puntaje_agrado, frecuencia_deseada, reaccion, fecha)
-      VALUES ($1,$2,$3,$4,$5,$6,NOW())
+      VALUES ($1,$2,$3,$4,$5,$6, NOW())
       RETURNING *`,
       [
         id_usuario,
@@ -112,16 +94,36 @@ app.post("/api/registro-actividad", async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.log("ERROR ACTIVIDAD:", err.message);
-    res.status(500).json({ error: "Error guardando actividad" });
+    console.log(err);
+    res.status(500).json({ error: "error registro actividad" });
   }
 });
 
-// =====================
-// RUTINA (PLANTILLA)
-// =====================
+/* =========================
+   OBTENER ACTIVIDADES POR USUARIO (TE FALTABA)
+========================= */
+app.get("/api/registro-actividad/usuario/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
 
-// crear rutina
+    const result = await pool.query(
+      `SELECT * FROM registroactividad
+       WHERE id_usuario = $1
+       ORDER BY id_registro DESC`,
+      [id]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: "error load actividades" });
+  }
+});
+
+/* =========================
+   RUTINA
+========================= */
+
+/* crear rutina */
 app.post("/api/rutina", async (req, res) => {
   const { id_usuario, nombre, descripcion, frecuencia } = req.body;
 
@@ -136,96 +138,52 @@ app.post("/api/rutina", async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.log("ERROR RUTINA:", err.message);
-    res.status(500).json({ error: "Error creando rutina" });
+    res.status(500).json({ error: "error rutina" });
   }
 });
 
-// obtener rutinas usuario
-app.get("/api/rutina/:id_usuario", async (req, res) => {
-  const { id_usuario } = req.params;
+/* agregar días a rutina */
+app.post("/api/rutina/dias", async (req, res) => {
+  const { id_rutina, dias } = req.body; 
+  // dias: [{dia:0,hora:"08:00",descripcion:"..."}, ...]
 
   try {
-    const result = await pool.query(
-      `SELECT * FROM rutinapersonalizada
-       WHERE id_usuario = $1
-       ORDER BY id_rutina DESC`,
-      [id_usuario]
-    );
-
-    res.json(result.rows);
-  } catch (err) {
-    console.log("ERROR GET RUTINA:", err.message);
-    res.status(500).json([]);
-  }
-});
-
-// eliminar rutina
-app.delete("/api/rutina/:id", async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    await pool.query(
-      "DELETE FROM rutinapersonalizada WHERE id_rutina = $1",
-      [id]
+    const inserts = await Promise.all(
+      dias.map(d =>
+        pool.query(
+          `INSERT INTO rutinadias
+          (id_rutina, dia, hora, descripcion)
+          VALUES ($1,$2,$3,$4)`,
+          [id_rutina, d.dia, d.hora, d.descripcion]
+        )
+      )
     );
 
     res.json({ ok: true });
   } catch (err) {
-    console.log("ERROR DELETE RUTINA:", err.message);
-    res.status(500).json({ error: "Error eliminando" });
+    res.status(500).json({ error: "error rutina dias" });
   }
 });
 
-// =====================
-// RUTINA DIAS (CALENDARIO REAL)
-// =====================
-
-// obtener días de rutina usuario
-app.get("/api/rutina-dias/:id_usuario", async (req, res) => {
-  const { id_usuario } = req.params;
-
+/* obtener rutina usuario */
+app.get("/api/rutina/:id_usuario", async (req, res) => {
   try {
+    const { id_usuario } = req.params;
+
     const result = await pool.query(
-      `SELECT * FROM rutina_dias
-       WHERE id_usuario = $1
-       ORDER BY fecha ASC`,
+      `SELECT * FROM rutinapersonalizada
+       WHERE id_usuario = $1`,
       [id_usuario]
     );
 
     res.json(result.rows);
   } catch (err) {
-    console.log("ERROR DIAS:", err.message);
-    res.status(500).json([]);
+    res.status(500).json({ error: "error get rutina" });
   }
 });
 
-// marcar día completado
-app.patch("/api/rutina-dias/:id", async (req, res) => {
-  const { id } = req.params;
-  const { completado } = req.body;
-
-  try {
-    const result = await pool.query(
-      `UPDATE rutina_dias
-       SET completado = $1
-       WHERE id_rutina_dia = $2
-       RETURNING *`,
-      [completado, id]
-    );
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.log("ERROR PATCH DIA:", err.message);
-    res.status(500).json({ error: "Error actualizando" });
-  }
-});
-
-// =====================
-// START SERVER
-// =====================
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Backend en puerto ${PORT}`);
+  console.log("🚀 Backend listo en", PORT);
 });
