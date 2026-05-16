@@ -1,95 +1,140 @@
 import express from "express";
 import cors from "cors";
+import dotenv from "dotenv";
 import fetch from "node-fetch";
 
-const app = express();
+import authRoutes from "./routers/authRoutes.js";
 
-app.use(cors());
+dotenv.config();
+
+const app = express();
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// =========================
-// MEMORIA (SIN SUPABASE)
-// =========================
-let actividades = [];
+app.use((req, res, next) => {
+  console.log("➡️", req.method, req.url);
+  next();
+});
+
+app.use("/api/auth", authRoutes);
 
 // =========================
-// CHAT IA
+// CONFIG SEGURA SUPABASE
+// =========================
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.warn("⚠️ SUPABASE NO CONFIGURADO");
+}
+
+// =========================
+// CHAT
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          { parts: [{ text: `EmpatIA: ${message}` }] }
+        ],
+      }),
+    }
+  );
+
+  const data = await r.json();
+
+  res.json({
+    reply:
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "🤍 No respuesta",
+  });
+});
+
+// =========================
+// GUARDAR ACTIVIDAD (FIX REAL)
+// =========================
+app.post("/registro-actividad", async (req, res) => {
   try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            { parts: [{ text: message }] }
-          ],
-        }),
-      }
-    );
+    if (!SUPABASE_URL) {
+      return res.status(500).json({ error: "Supabase no configurado" });
+    }
+
+    const body = req.body;
+
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/registroactividad`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify([body]),
+    });
 
     const data = await r.json();
 
-    res.json({
-      reply:
-        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "🤍 No puedo responder ahora",
-    });
+    res.json(data?.[0] || { ok: true });
   } catch (e) {
-    res.json({ reply: "🤍 error IA" });
+    console.log("ERROR:", e);
+    res.status(500).json({ error: "error guardar actividad" });
   }
 });
 
 // =========================
-// GUARDAR ACTIVIDAD
+// GET ACTIVIDADES
 // =========================
-app.post("/registro-actividad", (req, res) => {
-  const nueva = {
-    id_registro: Date.now(),
-    ...req.body,
-    creado_en: new Date(),
-  };
+app.get("/mis-actividades/:id", async (req, res) => {
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/registroactividad?id_usuario=eq.${req.params.id}&select=*`,
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+      }
+    );
 
-  actividades.push(nueva);
-
-  res.json(nueva);
+    const data = await r.json();
+    res.json(data || []);
+  } catch {
+    res.json([]);
+  }
 });
 
 // =========================
-// OBTENER ACTIVIDADES
+// UPDATE GUSTO
 // =========================
-app.get("/mis-actividades/:id", (req, res) => {
-  const id = Number(req.params.id);
+app.patch("/registro-actividad/:id", async (req, res) => {
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/registroactividad?id_registro=eq.${req.params.id}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(req.body),
+      }
+    );
 
-  const data = actividades.filter(
-    (a) => Number(a.id_usuario) === id
-  );
-
-  res.json(data);
+    const data = await r.json();
+    res.json(data);
+  } catch {
+    res.status(500).json({ error: "update error" });
+  }
 });
 
-// =========================
-// EDITAR GUSTO
-// =========================
-app.patch("/registro-actividad/:id", (req, res) => {
-  const id = Number(req.params.id);
-
-  actividades = actividades.map((a) =>
-    a.id_registro === id
-      ? { ...a, ...req.body }
-      : a
-  );
-
-  res.json({ ok: true });
-});
-
-// =========================
 const PORT = process.env.PORT || 3001;
-
-app.listen(PORT, () => {
-  console.log("🚀 backend estable en puerto", PORT);
-});
+app.listen(PORT, () =>
+  console.log("🚀 backend listo en puerto", PORT)
+);
