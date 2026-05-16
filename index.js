@@ -2,77 +2,50 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 
-import authRoutes from "./routers/authRoutes.js";
-import usersRoutes from "./routers/usersRoutes.js";
-
 dotenv.config();
 
 const app = express();
 
-// ======================================
-// CONFIG
-// ======================================
-const PORT = process.env.PORT || 3001;
-
-const MODEL = "models/gemini-2.5-flash";
-const API_KEY = process.env.GEMINI_API_KEY;
-
-// ======================================
-// MIDDLEWARES
-// ======================================
-app.use(cors({ origin: "*" }));
+app.use(cors());
 app.use(express.json());
 
-// ======================================
-// LOG
-// ======================================
-app.use((req, res, next) => {
-  console.log("➡️", req.method, req.url);
-  next();
-});
-
-// ======================================
-// ROUTES
-// ======================================
-app.use("/api/auth", authRoutes);
-app.use("/api/users", usersRoutes);
-
-// ======================================
-// HOME
-// ======================================
+// =========================
+// HEALTH CHECK
+// =========================
 app.get("/", (req, res) => {
-  res.send("🚀 EmpatIA Backend activo 🤖");
+  res.send("🚀 EmpatIA backend activo");
 });
 
-// ======================================
+// =========================
 // CHAT IA
-// ======================================
+// =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
 
-  console.log("🔥 ENTRÓ A /CHAT");
-  console.log("📩 MESSAGE:", message);
-
-  if (!message?.trim()) {
+  if (!message) {
     return res.json({
       reply: "🤍 Cuéntame cómo te sientes.",
+      errorType: "EMPTY",
     });
   }
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
             {
               parts: [
                 {
-                  text: message,
+                  text: `
+Eres EmpatIA:
+- Responde corto
+- Empático
+- 1 o 2 frases máximo
+                  `,
                 },
               ],
             },
@@ -81,48 +54,52 @@ app.post("/chat", async (req, res) => {
       }
     );
 
-    const data = await response.json();
+    const raw = await r.text();
+    let data = null;
 
-    console.log("📡 STATUS:", response.status);
+    try {
+      data = JSON.parse(raw);
+    } catch {}
 
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    // =========================
+    // ERROR GEMINI
+    // =========================
+    if (!r.ok) {
+      const msg = raw.toLowerCase();
 
-    if (!response.ok || !reply) {
-      console.log("❌ RESPUESTA IA INVÁLIDA:", data);
+      // 🚨 TOKEN / CUOTA
+      if (
+        r.status === 429 ||
+        msg.includes("quota") ||
+        msg.includes("resource_exhausted")
+      ) {
+        return res.json({
+          reply: "🤍 Ahora mismo no tengo tokens disponibles.",
+          errorType: "TOKEN_LIMIT",
+        });
+      }
 
       return res.json({
-        reply: "🤍 No puedo responder ahora.",
+        reply: "🤍 IA no disponible ahora.",
         errorType: "IA_ERROR",
       });
     }
 
-    return res.json({
-      reply,
-      model: MODEL,
-    });
-  } catch (err) {
-    console.log("❌ ERROR IA:", err.message);
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     return res.json({
+      reply: reply || "🤍 No pude responder.",
+    });
+  } catch (error) {
+    return res.json({
       reply: "🤍 Error de conexión.",
-      errorType: "NETWORK_ERROR",
+      errorType: "IA_ERROR",
     });
   }
 });
 
-// ======================================
-// 404
-// ======================================
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Ruta no encontrada",
-  });
-});
-
-// ======================================
-// START
-// ======================================
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🚀 EmpatIA backend en puerto ${PORT}`);
+  console.log("🚀 Backend listo en puerto", PORT);
 });
