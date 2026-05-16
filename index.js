@@ -62,15 +62,9 @@ app.post("/chat", async (req, res) => {
       `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: message }],
-            },
-          ],
+          contents: [{ parts: [{ text: message }] }],
         }),
       }
     );
@@ -83,27 +77,23 @@ app.post("/chat", async (req, res) => {
     if (!response.ok || !reply) {
       return res.json({
         reply:
-          "🤍 Lo siento, no puedo responder ahora. " +
-          "Pero puedo ayudarte a realizar una actividad para sentirte mejor.",
+          "🤍 No puedo responder ahora, pero puedo ayudarte con una actividad para sentirte mejor.",
       });
     }
 
-    return res.json({
-      reply,
-    });
+    return res.json({ reply });
   } catch (err) {
     console.log("❌ ERROR IA:", err.message);
 
     return res.json({
       reply:
-        "🤍 Lo siento, la IA no está disponible en este momento. " +
-        "Puedo ayudarte con una actividad para sentirte mejor.",
+        "🤍 La IA no está disponible ahora, pero puedo ayudarte con una actividad.",
     });
   }
 });
 
 // =====================
-// GUARDAR ACTIVIDAD BD
+// GUARDAR ACTIVIDAD
 // =====================
 app.post("/api/registro-actividad", async (req, res) => {
   const {
@@ -114,6 +104,8 @@ app.post("/api/registro-actividad", async (req, res) => {
     frecuencia_deseada,
     reaccion,
   } = req.body;
+
+  console.log("📥 ACTIVIDAD RECIBIDA:", req.body);
 
   try {
     const result = await pool.query(
@@ -137,6 +129,31 @@ app.post("/api/registro-actividad", async (req, res) => {
 
     return res.status(500).json({
       error: "Error guardando actividad",
+    });
+  }
+});
+
+// =====================
+// 🔥 NUEVO: ACTIVIDADES POR USUARIO (TE FALTABA ESTO)
+// =====================
+app.get("/api/registro-actividad/usuario/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `SELECT * 
+       FROM registroactividad 
+       WHERE id_usuario = $1
+       ORDER BY fecha DESC`,
+      [id]
+    );
+
+    return res.json(result.rows);
+  } catch (err) {
+    console.log("❌ ERROR GET ACTIVIDADES:", err.message);
+
+    return res.status(500).json({
+      error: "Error obteniendo actividades",
     });
   }
 });
