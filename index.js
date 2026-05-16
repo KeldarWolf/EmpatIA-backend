@@ -1,3 +1,7 @@
+// ============================================
+// src/index.js
+// ============================================
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -50,9 +54,9 @@ app.post("/chat", async (req, res) => {
 
   console.log("📩 MESSAGE:", message);
 
-  // =========================
+  // =====================================
   // VALIDACIÓN
-  // =========================
+  // =====================================
   if (!message?.trim()) {
     return res.json({
       ok: true,
@@ -62,13 +66,14 @@ app.post("/chat", async (req, res) => {
 
   try {
 
-    // =========================
+    // =====================================
     // REQUEST IA
-    // =========================
+    // =====================================
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${API_KEY}`,
       {
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
         },
@@ -94,9 +99,9 @@ app.post("/chat", async (req, res) => {
     const reply =
       data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    // =========================
+    // =====================================
     // ERROR IA
-    // =========================
+    // =====================================
     if (!response.ok || !reply) {
 
       console.log("❌ IA ERROR:", data);
@@ -116,9 +121,9 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    // =========================
+    // =====================================
     // OK
-    // =========================
+    // =====================================
     return res.json({
       ok: true,
       reply,
@@ -129,9 +134,9 @@ app.post("/chat", async (req, res) => {
 
     console.log("❌ ERROR:", err.message);
 
-    // =========================
+    // =====================================
     // NETWORK ERROR
-    // =========================
+    // =====================================
     return res.json({
       ok: false,
 
