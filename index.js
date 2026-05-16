@@ -14,7 +14,7 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // =========================
-// LOG
+// LOG (NO TOCAR)
 // =========================
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
@@ -22,7 +22,7 @@ app.use((req, res, next) => {
 });
 
 // =========================
-// ROUTES
+// ROUTES BASE
 // =========================
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
@@ -35,7 +35,7 @@ app.get("/", (req, res) => {
 });
 
 // =========================
-// IA
+// CONFIG IA
 // =========================
 const MODEL = "models/gemini-2.5-flash";
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -43,9 +43,13 @@ const API_KEY = process.env.GEMINI_API_KEY;
 const SYSTEM_PROMPT = `
 Eres EmpatIA.
 Respondes corto, empático y humano.
-Si no puedes responder, sugieres una actividad.
+No eres técnico.
+Si no puedes ayudar, sugieres una actividad suave.
 `;
 
+// =========================
+// IA CALL
+// =========================
 async function callGemini(message) {
   try {
     const r = await fetch(
@@ -72,38 +76,57 @@ async function callGemini(message) {
     const reply =
       data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    return { ok: r.ok, reply };
+    return {
+      ok: r.ok,
+      reply,
+    };
   } catch (err) {
-    return { ok: false };
+    return {
+      ok: false,
+      reply: null,
+      error: err.message,
+    };
   }
 }
 
 // =========================
-// CHAT
+// CHAT IA
 // =========================
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
+
+  console.log("🔥 CHAT:", message);
+
+  if (!message?.trim()) {
+    return res.json({
+      reply: "🤍 Cuéntame cómo te sientes.",
+      errorType: "EMPTY",
+    });
+  }
 
   const result = await callGemini(message);
 
   if (!result.ok || !result.reply) {
     return res.json({
       reply:
-        "🤍 Ahora no puedo responder… ¿quieres hacer una actividad?",
-      errorType: "IA_ERROR",
+        "🤍 Ahora mismo no puedo responder… ¿quieres hacer una actividad?",
+      errorType: "IA_FAIL",
     });
   }
 
-  res.json({ reply: result.reply });
+  return res.json({
+    reply: result.reply,
+    model: MODEL,
+  });
 });
 
 // =========================
-// 📌 ACTIVIDADES (TU BD REAL)
+// SUPABASE ACTIVIDADES
 // =========================
 app.get("/actividades", async (req, res) => {
   try {
     const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/Actividad?select=*`,
+      `${process.env.SUPABASE_URL}/rest/v1/actividad?select=*`,
       {
         headers: {
           apikey: process.env.SUPABASE_KEY,
@@ -113,14 +136,14 @@ app.get("/actividades", async (req, res) => {
     );
 
     const data = await r.json();
-    res.json(data);
+    return res.json(data || []);
   } catch (err) {
-    res.status(500).json([]);
+    return res.json([]);
   }
 });
 
 // =========================
-// 📌 REGISTRO ACTIVIDAD (TU BD REAL)
+// REGISTRAR ACTIVIDAD USUARIO
 // =========================
 app.post("/registro-actividad", async (req, res) => {
   const {
@@ -133,7 +156,7 @@ app.post("/registro-actividad", async (req, res) => {
 
   try {
     const r = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/RegistroActividad`,
+      `${process.env.SUPABASE_URL}/rest/v1/registroactividad`,
       {
         method: "POST",
         headers: {
@@ -157,9 +180,9 @@ app.post("/registro-actividad", async (req, res) => {
 
     const data = await r.json();
 
-    res.json(data?.[0] || { ok: true });
+    return res.json(data?.[0] || { ok: true });
   } catch (err) {
-    res.status(500).json({ error: "DB ERROR" });
+    return res.status(500).json({ error: "DB ERROR" });
   }
 });
 
